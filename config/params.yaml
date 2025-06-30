@@ -1,0 +1,6 @@
+hybrid_astar_node:
+  ros__parameters:
+    wheel_base:      2.5    # meters
+    max_steer:       0.45   # radians
+    step_size:       1.0    # meters per primitive
+    reverse_penalty: 1.5    # multiplier on reverse cost
