@@ -20,6 +20,7 @@ struct State {
 
   bool   is_reverse     = false;  // did we arrive here in reverse?
   double steering_angle = 0.0;    // what steer angle got us here
+  int    trace_id       = -1;     // index in SearchTrace::nodes once expanded
 };
 
 struct MotionPrimitive {

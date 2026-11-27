@@ -36,7 +36,8 @@ public:
 
   PlanResult plan(const GridMap& map,
                   const Pose2D& start_pose,
-                  const Pose2D& goal_pose);
+                  const Pose2D& goal_pose,
+                  const PlanOptions& options = {});
 
   void setLogger(std::function<void(const std::string&)> logger) {
     logger_ = std::move(logger);

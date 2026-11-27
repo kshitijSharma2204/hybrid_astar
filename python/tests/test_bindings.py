@@ -72,3 +72,24 @@ def test_plan_from_numpy_array():
     assert math.hypot(r.x[-1] - 25.0, r.y[-1] - 10.0) < 0.5
     with pytest.raises(ValueError):
         ha.plan(grid, (5.0, 10.0, 0.0), (25.0, 10.0, 0.0))   # no resolution
+
+
+def test_trace_is_consistent():
+    sc = ha.load_scenario(scenario("S1"))
+    cfg = ha.load_config(PARAMS)
+    r = ha.plan(sc.grid, sc.start, sc.goal, cfg, record_trace=True)
+    nodes = r.trace.nodes
+    assert len(nodes) == r.stats.expansions
+    assert nodes[0, 3] == -1
+    parents = nodes[1:, 3].astype(int)
+    assert (parents >= 0).all() and (parents < np.arange(1, len(nodes))).all()
+    assert ha.plan(sc.grid, sc.start, sc.goal, cfg).trace is None
+
+
+def test_progress_callback_sees_every_node():
+    sc = ha.load_scenario(scenario("S1"))
+    chunks = []
+    r = ha.plan(sc.grid, sc.start, sc.goal, ha.load_config(PARAMS),
+                on_progress=lambda n: chunks.append(n.copy()), every=500)
+    seen = sum(len(c) for c in chunks)
+    assert seen == (r.stats.expansions // 500) * 500

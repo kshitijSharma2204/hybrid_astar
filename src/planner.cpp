@@ -22,7 +22,8 @@ HybridAStarPlanner::HybridAStarPlanner(const PlannerConfig& config)
 PlanResult HybridAStarPlanner::plan(
     const GridMap& map,
     const Pose2D& start_pose,
-    const Pose2D& goal_pose)
+    const Pose2D& goal_pose,
+    const PlanOptions& options)
 {
   auto t_start = std::chrono::steady_clock::now();
   auto elapsedMs = [&]() {
@@ -30,6 +31,8 @@ PlanResult HybridAStarPlanner::plan(
       std::chrono::steady_clock::now() - t_start).count();
   };
   PlanResult result;
+  if (options.record_trace) result.trace.emplace();
+  SearchTrace* trace = result.trace ? &*result.trace : nullptr;
   map_ = map;
   checker_ = std::make_unique<CollisionChecker>(map_, config_);
   buildObstacleKDTree();
@@ -122,6 +125,15 @@ PlanResult HybridAStarPlanner::plan(
     if (closed_set.count(key)) continue;
     closed_set.insert(key);
     ++result.stats.expansions;
+    if (trace) {
+      current->trace_id = int(trace->nodes.size());
+      trace->nodes.push_back({current->x, current->y, current->theta,
+                              current->parent ? current->parent->trace_id : -1});
+      if (options.on_progress &&
+          result.stats.expansions % std::max(1, options.progress_every) == 0) {
+        options.on_progress(*trace);
+      }
+    }
 
     // 2) fallback: goal‐proximity
     double dx    = current->x - goal.x;

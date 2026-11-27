@@ -2,6 +2,8 @@
 
 #include <cmath>
 #include <cstdint>
+#include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -55,11 +57,35 @@ struct PlanStats {
   double smooth_ms  = 0.0;
 };
 
+// What the search did, in order. Only filled when PlanOptions asks for it.
+struct SearchTrace {
+  struct Node {
+    double x, y, theta;
+    int parent;       // index into nodes, -1 for the start
+  };
+  struct RsAttempt {
+    int node;         // index into nodes the attempt started from
+    bool collided;
+    std::vector<Pose2D> samples;
+  };
+  std::vector<Node> nodes;
+  std::vector<RsAttempt> rs_attempts;
+};
+
+struct PlanOptions {
+  bool record_trace = false;
+  // Called every progress_every expansions with the trace so far. Needs
+  // record_trace.
+  std::function<void(const SearchTrace&)> on_progress;
+  int progress_every = 1000;
+};
+
 struct PlanResult {
   std::vector<Pose2D> poses;
   std::vector<int> direction;   // per pose: +1 forward, -1 reverse
   PlanStats stats;
   std::string message;
+  std::optional<SearchTrace> trace;
 };
 
 } // namespace hybrid_astar

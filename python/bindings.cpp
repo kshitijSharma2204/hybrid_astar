@@ -9,6 +9,7 @@
 #include <pybind11/stl.h>
 
 #include <cstring>
+#include <optional>
 
 namespace py = pybind11;
 using namespace hybrid_astar;
@@ -44,11 +45,42 @@ py::array_t<T> column(size_t n, F f) {
   return a;
 }
 
+py::array_t<double> traceNodes(const SearchTrace& t, size_t from, size_t to) {
+  py::array_t<double> a({to - from, size_t(4)});
+  auto m = a.template mutable_unchecked<2>();
+  for (size_t i = from; i < to; ++i) {
+    const auto& n = t.nodes[i];
+    m(i - from, 0) = n.x;
+    m(i - from, 1) = n.y;
+    m(i - from, 2) = n.theta;
+    m(i - from, 3) = n.parent;
+  }
+  return a;
+}
+
 PlanResult runPlan(const GridMap& grid, const Pose2D& start, const Pose2D& goal,
-                   const PlannerConfig& cfg) {
+                   const PlannerConfig& cfg, bool record_trace,
+                   py::object on_progress, int every) {
   HybridAStarPlanner planner(cfg);
-  py::gil_scoped_release no_gil;
-  return planner.plan(grid, start, goal);
+  PlanOptions opts;
+  opts.record_trace = record_trace || !on_progress.is_none();
+  opts.progress_every = every;
+  size_t sent = 0;
+  if (!on_progress.is_none()) {
+    // The search runs without the GIL; take it only for the callback.
+    opts.on_progress = [&](const SearchTrace& t) {
+      py::gil_scoped_acquire gil;
+      on_progress(traceNodes(t, sent, t.nodes.size()));
+      sent = t.nodes.size();
+    };
+  }
+  PlanResult r;
+  {
+    py::gil_scoped_release no_gil;
+    r = planner.plan(grid, start, goal, opts);
+  }
+  if (!record_trace) r.trace.reset();
+  return r;
 }
 
 } // namespace
@@ -113,7 +145,28 @@ PYBIND11_MODULE(hybrid_astar, m) {
     .def_readonly("search_ms", &PlanStats::search_ms)
     .def_readonly("smooth_ms", &PlanStats::smooth_ms);
 
+  py::class_<SearchTrace::RsAttempt>(m, "RsAttempt")
+    .def_readonly("node", &SearchTrace::RsAttempt::node)
+    .def_readonly("collided", &SearchTrace::RsAttempt::collided)
+    .def_property_readonly("samples", [](const SearchTrace::RsAttempt& a) {
+      py::array_t<double> out({a.samples.size(), size_t(3)});
+      auto m = out.mutable_unchecked<2>();
+      for (size_t i = 0; i < a.samples.size(); ++i) {
+        m(i, 0) = a.samples[i].x;
+        m(i, 1) = a.samples[i].y;
+        m(i, 2) = a.samples[i].theta;
+      }
+      return out;
+    }, "float64[n, 3]: x, y, theta");
+
+  py::class_<SearchTrace>(m, "SearchTrace")
+    .def_property_readonly("nodes", [](const SearchTrace& t) {
+      return traceNodes(t, 0, t.nodes.size());
+    }, "float64[n, 4]: x, y, theta, parent index (-1 for the start)")
+    .def_readonly("rs_attempts", &SearchTrace::rs_attempts);
+
   py::class_<PlanResult>(m, "PlanResult")
+    .def_readonly("trace", &PlanResult::trace)
     .def_property_readonly("success", [](const PlanResult& r) { return r.stats.success; })
     .def_readonly("stats", &PlanResult::stats)
     .def_readonly("message", &PlanResult::message)
@@ -141,19 +194,28 @@ PYBIND11_MODULE(hybrid_astar, m) {
 
   m.def("plan",
     [](py::object grid, const Pose2D& start, const Pose2D& goal,
-       std::optional<PlannerConfig> config, double resolution,
-       std::pair<double, double> origin) {
+       std::optional<PlannerConfig> config, bool record_trace,
+       double resolution, std::pair<double, double> origin,
+       py::object on_progress, int every) {
       PlannerConfig cfg = config ? *config : PlannerConfig{};
       if (py::isinstance<GridMap>(grid)) {
-        return runPlan(grid.cast<const GridMap&>(), start, goal, cfg);
+        return runPlan(grid.cast<const GridMap&>(), start, goal, cfg,
+                       record_trace, on_progress, every);
       }
       if (resolution <= 0) {
         throw py::value_error("pass resolution= when grid is a numpy array");
       }
       GridMap g = gridFromArray(grid.cast<Int8Array>(), resolution, origin);
-      return runPlan(g, start, goal, cfg);
+      return runPlan(g, start, goal, cfg, record_trace, on_progress, every);
     },
     py::arg("grid"), py::arg("start"), py::arg("goal"), py::arg("config") = py::none(),
-    py::arg("resolution") = 0.0, py::arg("origin") = std::make_pair(0.0, 0.0),
-    "Plan from start to goal. grid is a GridMap or an int8 array with resolution=.");
+    py::arg("record_trace") = false, py::arg("resolution") = 0.0,
+    py::arg("origin") = std::make_pair(0.0, 0.0), py::arg("on_progress") = py::none(),
+    py::arg("every") = 1000,
+    R"(Plan from start to goal.
+
+grid is a GridMap, or an int8 array (row 0 = smallest y) with resolution=.
+With record_trace=True the result has .trace. on_progress(new_nodes) is
+called every `every` expansions with the nodes expanded since the last
+call, as float64[n, 4] (x, y, theta, parent).)");
 }
