@@ -2,8 +2,6 @@
 
 #include "hybrid_astar/geometry.hpp"
 
-#include <nanoflann.hpp>
-
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -11,20 +9,6 @@
 #include <utility>
 
 namespace hybrid_astar {
-
-struct CollisionChecker::KdIndex {
-  struct Cloud {
-    std::vector<std::array<double,2>> points;
-    size_t kdtree_get_point_count() const { return points.size(); }
-    double kdtree_get_pt(size_t idx, size_t dim) const { return points[idx][dim]; }
-    template <class BBOX> bool kdtree_get_bbox(BBOX&) const { return false; }
-  };
-  using Tree = nanoflann::KDTreeSingleIndexAdaptor<
-    nanoflann::L2_Simple_Adaptor<double, Cloud>, Cloud, 2, size_t>;
-
-  Cloud cloud;
-  std::unique_ptr<Tree> tree;
-};
 
 std::vector<float> distanceTransform(const GridMap& g) {
   // Felzenszwalb & Huttenlocher: 1D squared distance along each column,
@@ -81,14 +65,12 @@ std::vector<float> distanceTransform(const GridMap& g) {
   return d;
 }
 
-CollisionChecker::CollisionChecker(const GridMap& grid, const PlannerConfig& cfg,
-                                   Lookup lookup)
+CollisionChecker::CollisionChecker(const GridMap& grid, const PlannerConfig& cfg)
   : grid_{grid},
     length_{cfg.vehicle_length},
     width_{cfg.vehicle_width},
     offset_{cfg.rear_axle_to_center},
-    mode_{cfg.collision_mode},
-    lookup_{lookup}
+    mode_{cfg.collision_mode}
 {
   // n equal slices of the rectangle, one disc around each slice.
   const int n = cfg.collision_circles;
@@ -97,36 +79,17 @@ CollisionChecker::CollisionChecker(const GridMap& grid, const PlannerConfig& cfg
   for (int i = 0; i < n; ++i) {
     circle_offsets_.push_back(offset_ - length_ / 2 + half_slice * (2 * i + 1));
   }
-  threshold_ = radius_ + grid_.resolution * std::sqrt(2.0) / 2;
-
-  if (mode_ == 0) return;
-  if (lookup_ == Lookup::DistanceMap) {
-    dist_ = distanceTransform(grid_);
-  } else {
-    kd_ = std::make_unique<KdIndex>();
-    for (int iy = 0; iy < grid_.height; ++iy)
-      for (int ix = 0; ix < grid_.width; ++ix)
-        if (isOccupied(grid_, ix, iy))
-          kd_->cloud.points.push_back({cellCenterX(grid_, ix), cellCenterY(grid_, iy)});
-    kd_->tree = std::make_unique<KdIndex::Tree>(
-      2, kd_->cloud, nanoflann::KDTreeSingleIndexAdaptorParams(10));
-    kd_->tree->buildIndex();
-  }
+  // The map stores distances between cell centres. A disc centre can be up
+  // to half a diagonal from its cell's centre, and an obstacle cell reaches
+  // half a diagonal past its own centre, hence one full diagonal.
+  threshold_ = radius_ + grid_.resolution * std::sqrt(2.0);
+  dist_ = distanceTransform(grid_);
 }
-
-CollisionChecker::~CollisionChecker() = default;
 
 bool CollisionChecker::inCollision(const Pose2D& p) const {
   if (mode_ == 0) return exactCollision(p);
   if (mode_ == 1) return circleCollision(p);
   return circleCollision(p) && exactCollision(p);
-}
-
-bool CollisionChecker::isPointInObstacle(double x, double y) const {
-  int ix = worldToCellX(grid_, x);
-  int iy = worldToCellY(grid_, y);
-  if (!inBounds(grid_, ix, iy)) return true;
-  return isOccupied(grid_, ix, iy);
 }
 
 // Every cell the rectangle touches, row by row: for each grid row, the
@@ -172,51 +135,20 @@ bool CollisionChecker::exactCollision(const Pose2D& p) const {
   return false;
 }
 
-bool CollisionChecker::outlineCollision(const Pose2D& p) const {
-  double L = length_, W = width_;
-  double c = std::cos(p.theta), s_ = std::sin(p.theta);
-  const Pose2D s{p.x + offset_*c, p.y + offset_*s_, p.theta};
-  const std::pair<double,double> corners[4] = {
-    { L/2,  W/2}, { L/2, -W/2},
-    {-L/2, -W/2}, {-L/2,  W/2}
+double CollisionChecker::obstacleDistance(double x, double y) const {
+  // bilinear between the four nearest cell centres, clamped to the map
+  double fx = (x - grid_.origin_x) / grid_.resolution - 0.5;
+  double fy = (y - grid_.origin_y) / grid_.resolution - 0.5;
+  fx = std::clamp(fx, 0.0, grid_.width - 1.0);
+  fy = std::clamp(fy, 0.0, grid_.height - 1.0);
+  int x0 = std::min(int(fx), grid_.width - 2), y0 = std::min(int(fy), grid_.height - 2);
+  double tx = fx - x0, ty = fy - y0;
+  // capped so an empty map gives a large number instead of 0 * inf
+  auto at = [&](int ix, int iy) {
+    return std::min(double(dist_[size_t(iy) * grid_.width + ix]), 1e6);
   };
-  for (auto &q : corners) {
-    if (isPointInObstacle(s.x + q.first*c - q.second*s_,
-                          s.y + q.first*s_ + q.second*c)) return true;
-  }
-  for (double v=-W/2; v<=W/2; v+=0.2) {
-    if (isPointInObstacle(
-          s.x + (L/2)*c - v*s_,
-          s.y + (L/2)*s_ + v*c)) return true;
-    if (isPointInObstacle(
-          s.x +(-L/2)*c - v*s_,
-          s.y +(-L/2)*s_ + v*c)) return true;
-  }
-  for (double u=-L/2; u<=L/2; u+=0.2) {
-    if (isPointInObstacle(
-          s.x + u*c - (W/2)*s_,
-          s.y + u*s_ + (W/2)*c)) return true;
-    if (isPointInObstacle(
-          s.x + u*c -(-W/2)*s_,
-          s.y + u*s_ +(-W/2)*c)) return true;
-  }
-  return false;
-}
-
-// Distance from a point to the nearest occupied cell centre. The distance
-// map only knows cell centres, so it subtracts the half-diagonal to stay a
-// lower bound.
-double CollisionChecker::nearestObstacle(double x, double y) const {
-  if (lookup_ == Lookup::DistanceMap) {
-    int ix = worldToCellX(grid_, x), iy = worldToCellY(grid_, y);
-    return dist_[size_t(iy) * grid_.width + ix] - grid_.resolution * std::sqrt(2.0) / 2;
-  }
-  if (kd_->cloud.points.empty()) return std::numeric_limits<double>::infinity();
-  const double q[2] = {x, y};
-  size_t idx;
-  double d2;
-  kd_->tree->knnSearch(q, 1, &idx, &d2);
-  return std::sqrt(d2);
+  return (1 - ty) * ((1 - tx) * at(x0, y0) + tx * at(x0 + 1, y0)) +
+         ty * ((1 - tx) * at(x0, y0 + 1) + tx * at(x0 + 1, y0 + 1));
 }
 
 bool CollisionChecker::circleCollision(const Pose2D& p) const {
@@ -228,7 +160,8 @@ bool CollisionChecker::circleCollision(const Pose2D& p) const {
     // a disc that leaves the map counts as a collision, like the exact check
     if (x - radius_ < xmin || x + radius_ > xmax ||
         y - radius_ < ymin || y + radius_ > ymax) return true;
-    if (nearestObstacle(x, y) <= threshold_) return true;
+    int ix = worldToCellX(grid_, x), iy = worldToCellY(grid_, y);
+    if (dist_[size_t(iy) * grid_.width + ix] <= threshold_) return true;
   }
   return false;
 }

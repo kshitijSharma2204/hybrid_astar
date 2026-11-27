@@ -104,16 +104,24 @@ TEST(Collision, PoseIsTheRearAxle) {
   EXPECT_TRUE(cc.inCollision({11.41, 5.0, M_PI}));
 }
 
-TEST(Collision, ExactSeesCellsTheOutlineSkips) {
-  // One occupied cell under the middle of the car: no outline sample lands
-  // on it, but it is inside the footprint.
+TEST(Collision, ExactSeesACellInsideTheCar) {
+  // One occupied cell under the middle of the car, away from the outline.
+  // v1's outline check missed this.
   GridMap g = emptyGrid(200, 100, 0.1);
   g.data[size_t(50) * 200 + 100] = 100;    // cell centre (10.05, 5.05)
   PlannerConfig cfg = centred();
   CollisionChecker cc(g, cfg);
-  EXPECT_FALSE(cc.outlineCollision({10.0, 5.0, 0.3}));
   EXPECT_TRUE(cc.exactCollision({10.0, 5.0, 0.3}));
   EXPECT_TRUE(cc.circleCollision({10.0, 5.0, 0.3}));
+  EXPECT_FALSE(cc.exactCollision({10.0, 8.0, 0.3}));
+}
+
+TEST(Collision, ObstacleDistanceOnEmptyMapIsLarge) {
+  GridMap g = emptyGrid(50, 50, 0.1);
+  CollisionChecker cc(g, PlannerConfig{});
+  double d = cc.obstacleDistance(2.5, 2.5);
+  EXPECT_TRUE(std::isfinite(d));
+  EXPECT_GT(d, 1000.0);
 }
 
 TEST(Collision, DistanceTransformMatchesBruteForce) {
@@ -134,9 +142,8 @@ TEST(Collision, DistanceTransformMatchesBruteForce) {
 }
 
 TEST(Collision, CirclesNeverMissACollision) {
-  // Random boxes and random poses: if the exact check says collision, both
-  // circle lookups must too. Also the two lookups must agree with each
-  // other up to the distance map's extra half cell.
+  // Random boxes and random poses: whenever the exact check says
+  // collision, the circle check must too.
   GridMap g = emptyGrid(300, 300, 0.1);
   std::mt19937 rng(7);
   std::uniform_int_distribution<int> cell(0, 299), size(1, 25);
@@ -148,21 +155,18 @@ TEST(Collision, CirclesNeverMissACollision) {
   for (int n : {3, 4}) {
     PlannerConfig cfg;
     cfg.collision_circles = n;
-    CollisionChecker dm(g, cfg, CollisionChecker::Lookup::DistanceMap);
-    CollisionChecker kd(g, cfg, CollisionChecker::Lookup::KdTree);
+    CollisionChecker cc(g, cfg);
     std::uniform_real_distribution<double> pos(0.0, 30.0), ang(-M_PI, M_PI);
     int exact_hits = 0;
     for (int i = 0; i < 20000; ++i) {
       Pose2D p{pos(rng), pos(rng), ang(rng)};
-      bool e = dm.exactCollision(p);
+      bool e = cc.exactCollision(p);
       exact_hits += e;
       if (e) {
-        ASSERT_TRUE(dm.circleCollision(p)) << n << " circles, distance map";
-        ASSERT_TRUE(kd.circleCollision(p)) << n << " circles, k-d tree";
+        ASSERT_TRUE(cc.circleCollision(p)) << n << " circles";
       }
-      if (kd.circleCollision(p)) {
-        EXPECT_TRUE(dm.circleCollision(p));
-      }
+      // mode 2 answers exactly like the exact check
+      EXPECT_EQ(cc.inCollision(p), e);
     }
     EXPECT_GT(exact_hits, 1000);
   }

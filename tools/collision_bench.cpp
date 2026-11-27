@@ -1,4 +1,5 @@
 // Compares the collision checks on random poses over the S5 maps.
+// (Commit 650b397 also had v1's outline check and a k-d tree lookup.)
 //
 //   collision_bench [poses_per_map] [scenarios/S5]
 //
@@ -41,9 +42,7 @@ int main(int argc, char** argv) {
   const std::string dir = argc > 2 ? argv[2] : "scenarios/S5";
 
   std::vector<Tally> tallies = {
-    {"outline (v1)"}, {"circles x3, k-d tree"}, {"circles x3, distance map"},
-    {"circles x4, k-d tree"}, {"circles x4, distance map"},
-    {"circles x4 + exact (mode 2)"}};
+    {"circles x3"}, {"circles x4"}, {"circles x4 + exact (mode 2)"}};
   double exact_ms = 0.0;
   long total = 0, exact_hits = 0;
   std::mt19937 rng(1);
@@ -66,7 +65,9 @@ int main(int argc, char** argv) {
     c4.collision_mode = 2;
 
     auto t0 = Clock::now();
-    CollisionChecker exact(g, PlannerConfig{});
+    PlannerConfig c0;
+    c0.collision_mode = 0;
+    CollisionChecker exact(g, c0);
     std::vector<char> ref(poses.size());
     t0 = Clock::now();
     for (size_t i = 0; i < poses.size(); ++i) ref[i] = exact.exactCollision(poses[i]);
@@ -74,9 +75,9 @@ int main(int argc, char** argv) {
     for (char r : ref) exact_hits += r;
     total += long(poses.size());
 
-    auto build = [&](const PlannerConfig& cfg, CollisionChecker::Lookup lk, Tally& t) {
+    auto build = [&](const PlannerConfig& cfg, Tally& t) {
       auto tb = Clock::now();
-      auto cc = std::make_unique<CollisionChecker>(g, cfg, lk);
+      auto cc = std::make_unique<CollisionChecker>(g, cfg);
       t.build_ms += msSince(tb);
       return cc;
     };
@@ -91,17 +92,12 @@ int main(int argc, char** argv) {
       }
     };
 
-    run(tallies[0], [&](const Pose2D& p) { return exact.outlineCollision(p); });
-    auto k3 = build(c3, CollisionChecker::Lookup::KdTree, tallies[1]);
-    run(tallies[1], [&](const Pose2D& p) { return k3->circleCollision(p); });
-    auto d3 = build(c3, CollisionChecker::Lookup::DistanceMap, tallies[2]);
-    run(tallies[2], [&](const Pose2D& p) { return d3->circleCollision(p); });
-    auto k4 = build(c4, CollisionChecker::Lookup::KdTree, tallies[3]);
-    run(tallies[3], [&](const Pose2D& p) { return k4->circleCollision(p); });
-    auto d4 = build(c4, CollisionChecker::Lookup::DistanceMap, tallies[4]);
-    run(tallies[4], [&](const Pose2D& p) { return d4->circleCollision(p); });
-    tallies[5].build_ms = tallies[4].build_ms;
-    run(tallies[5], [&](const Pose2D& p) { return d4->inCollision(p); });
+    auto d3 = build(c3, tallies[0]);
+    run(tallies[0], [&](const Pose2D& p) { return d3->circleCollision(p); });
+    auto d4 = build(c4, tallies[1]);
+    run(tallies[1], [&](const Pose2D& p) { return d4->circleCollision(p); });
+    tallies[2].build_ms = tallies[1].build_ms;
+    run(tallies[2], [&](const Pose2D& p) { return d4->inCollision(p); });
   }
 
   long exact_free = total - exact_hits;
@@ -109,7 +105,7 @@ int main(int argc, char** argv) {
               total, exact_hits, 100.0 * exact_hits / total);
   std::printf("| check | misses a collision | over-cautious (%% of free poses) "
               "| ns per pose | build ms per map |\n|---|---|---|---|---|\n");
-  std::printf("| exact (every touched cell) | - | - | %.0f | 0 |\n", 1e6 * exact_ms / total);
+  std::printf("| exact (every touched cell) | - | - | %.0f | - |\n", 1e6 * exact_ms / total);
   for (const auto& t : tallies) {
     std::printf("| %s | %ld | %ld (%.2f%%) | %.0f | %.2f |\n", t.name.c_str(), t.missed,
                 t.cautious, 100.0 * t.cautious / exact_free, 1e6 * t.ms / total,
