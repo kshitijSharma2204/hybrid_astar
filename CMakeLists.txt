@@ -20,6 +20,7 @@ find_package(ompl REQUIRED)
 
 # Sources are listed by hand so the pure pursuit work in src/ is not built.
 add_library(hybrid_astar_core STATIC
+  src/config.cpp
   src/planner.cpp
   src/scenario.cpp
 )

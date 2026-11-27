@@ -1,6 +1,23 @@
-hybrid_astar_node:
-  ros__parameters:
-    wheel_base:      2.5    # meters
-    max_steer:       0.45   # radians
-    step_size:       1.0    # meters per primitive
-    reverse_penalty: 1.5    # multiplier on reverse cost
+# Hybrid A* parameters. Flat "key: value", numbers only.
+# Missing keys keep the defaults in PlannerConfig (types.hpp); unknown keys
+# are an error.
+
+# vehicle
+wheel_base: 2.5          # m
+max_steer: 0.45          # rad, so R_min = 2.5 / tan(0.45) = 5.17 m
+vehicle_length: 4.5      # m
+vehicle_width: 2.0       # m
+
+# search
+step_size: 1.0           # m per motion primitive
+collision_step: 0.2      # m between collision checks along a primitive
+heading_bins: 24         # 15 degrees each
+goal_pos_tol: 0.5        # m
+goal_heading_tol: 0.3    # rad
+
+# costs
+reverse_penalty: 10.0          # multiplier on distance driven in reverse
+direction_change_cost: 150.0   # added at every forward/reverse switch
+steer_cost: 1.0                # per rad of steering
+steer_change_cost: 5.0         # per rad of change in steering
+heuristic_weight: 50.0         # 1 = plain A*, larger = greedier

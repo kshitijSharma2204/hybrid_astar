@@ -1,3 +1,4 @@
+#include "hybrid_astar/config.hpp"
 #include "hybrid_astar/planner.hpp"
 #include "hybrid_astar/scenario.hpp"
 
@@ -7,15 +8,19 @@
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <vector>
 
 using namespace hybrid_astar;
 
 namespace {
 
 const char* kUsage =
-  "usage: hybrid_astar_cli --scenario FILE [--out FILE] [-v]\n"
+  "usage: hybrid_astar_cli --scenario FILE [--config FILE] [--set KEY=VALUE]...\n"
+  "                        [--out FILE] [-v]\n"
   "\n"
   "  --scenario FILE   scenario text file (see scenarios/)\n"
+  "  --config FILE     planner parameters, default config/params.yaml\n"
+  "  --set KEY=VALUE   override one parameter after the file is read\n"
   "  --out FILE        write the path as CSV: x,y,theta,direction\n"
   "  -v                print planner log messages to stderr\n";
 
@@ -36,6 +41,8 @@ void writePath(const std::string& file, const PlanResult& r) {
 
 int main(int argc, char** argv) {
   std::string scenario_file, out_file;
+  std::string config_file = "config/params.yaml";
+  std::vector<std::string> overrides;
   bool verbose = false;
 
   for (int i = 1; i < argc; ++i) {
@@ -49,6 +56,8 @@ int main(int argc, char** argv) {
     };
     if (a == "--scenario") scenario_file = next();
     else if (a == "--out") out_file = next();
+    else if (a == "--config") config_file = next();
+    else if (a == "--set") overrides.push_back(next());
     else if (a == "-v") verbose = true;
     else if (a == "-h" || a == "--help") { std::cout << kUsage; return 0; }
     else { std::cerr << "unknown option " << a << "\n" << kUsage; return 2; }
@@ -57,7 +66,12 @@ int main(int argc, char** argv) {
 
   try {
     Scenario sc = loadScenario(scenario_file);
-    PlannerConfig cfg;
+    PlannerConfig cfg = loadConfig(config_file);
+    for (const auto& o : overrides) {
+      auto eq = o.find('=');
+      if (eq == std::string::npos) throw std::runtime_error("--set needs KEY=VALUE, got " + o);
+      setConfigValue(cfg, o.substr(0, eq), std::stod(o.substr(eq + 1)));
+    }
     HybridAStarPlanner planner(cfg);
     if (verbose) planner.setLogger([](const std::string& m) { std::cerr << m << "\n"; });
 
