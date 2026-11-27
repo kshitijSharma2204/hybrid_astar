@@ -50,22 +50,30 @@ def summarise(rows):
     groups = {}
     for r in rows:
         groups.setdefault((r["label"], group_of(r["scenario"])), []).append(r)
-    head = ("| label | scenario | runs | success | search ms median | p95 | expansions median "
-            "| length m | switches | max curv. raw | max curv. | min clearance m |")
+    head = ("| label | scenario | runs | success | search ms median | p95 | smooth ms median "
+            "| expansions median | length m | switches | max curv. raw | max curv. "
+            "| min clearance m | runs put back |")
     lines = [head, "|" + "---|" * (head.count("|") - 1)]
     for (label, sc), rs in sorted(groups.items()):
         ok = [r for r in rs if r["success"] == "1"]
-        f = lambda key, src=ok: [float(r[key]) for r in src]
-        t = f("search_ms", rs)
-        line = "| %s | %s | %d | %d/%d | %.1f | %.1f | %s | %s | %s | %s | %s | %s |" % (
+
+        def col(key, src=ok):
+            return [float(r[key]) for r in src if r.get(key) not in (None, "")]
+
+        def fmt(v, f):
+            return f % v if ok else "-"
+
+        t = col("search_ms", rs)
+        lines.append("| %s | %s | %d | %d/%d | %.1f | %.1f | %s | %s | %s | %s | %s | %s | %s | %s |" % (
             label, sc, len(rs), len(ok), len(rs), statistics.median(t), pct(t, 0.95),
-            "%.0f" % statistics.median(f("expansions")) if ok else "-",
-            "%.1f" % statistics.median(f("length")) if ok else "-",
-            "%.0f" % statistics.median(f("switches")) if ok else "-",
-            "%.4f" % max(f("max_curvature_raw")) if ok else "-",
-            "%.4f" % max(f("max_curvature")) if ok else "-",
-            "%.2f" % min(f("min_clearance")) if ok else "-")
-        lines.append(line)
+            fmt(statistics.median(col("smooth_ms")) if ok else 0, "%.1f"),
+            fmt(statistics.median(col("expansions")) if ok else 0, "%.0f"),
+            fmt(statistics.median(col("length")) if ok else 0, "%.1f"),
+            fmt(statistics.median(col("switches")) if ok else 0, "%.0f"),
+            fmt(max(col("max_curvature_raw")) if ok else 0, "%.4f"),
+            fmt(max(col("max_curvature")) if ok else 0, "%.4f"),
+            fmt(min(col("min_clearance")) if ok else 0, "%.2f"),
+            fmt(sum(col("smooth_fallbacks")) if ok else 0, "%.0f")))
     return "\n".join(lines)
 
 
