@@ -16,7 +16,7 @@ steer_samples: 5         # steering angles from -max_steer to +max_steer
 xy_resolution: 0.2       # m, cell size of the closed set
 heading_bins: 72         # 5 degrees each
 max_expansions: 200000   # give up after this many
-collision_mode: 2        # 0 exact outline, 1 covering circles, 2 circles then exact
+collision_mode: 2        # 0 exact, 1 covering circles, 2 circles then exact
 collision_circles: 4     # discs along the centre line for the circle check
 goal_pos_tol: 0.5        # m, only used when analytic expansion is off
 goal_heading_tol: 0.3    # rad, same
