@@ -1,11 +1,10 @@
 #include "hybrid_astar/planner.hpp"
 
-#include "rclcpp/rclcpp.hpp"
-
 #include <ompl/base/ScopedState.h>
 #include <ompl/base/spaces/ReedsSheppStateSpace.h>
 
 #include <algorithm>
+#include <cstdio>
 #include <limits>
 #include <queue>
 #include <unordered_set>
@@ -23,26 +22,20 @@ HybridAStarPlanner::HybridAStarPlanner(
   motion_primitives_ = generateMotionPrimitives(vehicle_model_);
 }
 
-std::optional<nav_msgs::msg::Path> HybridAStarPlanner::plan(
-    const geometry_msgs::msg::PoseStamped& start_msg,
-    const geometry_msgs::msg::PoseStamped& goal_msg,
-    const nav_msgs::msg::OccupancyGrid& map)
+std::optional<std::vector<Pose2D>> HybridAStarPlanner::plan(
+    const Pose2D& start_pose,
+    const Pose2D& goal_pose,
+    const GridMap& map)
 {
-  auto logger = rclcpp::get_logger("HybridAStarPlanner");
   map_ = map;
+  expansions_ = 0;
   buildObstacleKDTree();
 
   // Build start state
   State start;
-  start.x = start_msg.pose.position.x;
-  start.y = start_msg.pose.position.y;
-  {
-    auto &q = start_msg.pose.orientation;
-    start.theta = std::atan2(
-      2.0*(q.w*q.z + q.x*q.y),
-      1.0 - 2.0*(q.y*q.y + q.z*q.z)
-    );
-  }
+  start.x = start_pose.x;
+  start.y = start_pose.y;
+  start.theta = start_pose.theta;
   start.g = 0.0; start.h = 0.0;
   start.parent = nullptr;
   start.is_reverse = false;
@@ -50,33 +43,31 @@ std::optional<nav_msgs::msg::Path> HybridAStarPlanner::plan(
 
   // Build goal state
   State goal;
-  goal.x = goal_msg.pose.position.x;
-  goal.y = goal_msg.pose.position.y;
-  {
-    auto &q = goal_msg.pose.orientation;
-    goal.theta = std::atan2(
-      2.0*(q.w*q.z + q.x*q.y),
-      1.0 - 2.0*(q.y*q.y + q.z*q.z)
-    );
-  }
+  goal.x = goal_pose.x;
+  goal.y = goal_pose.y;
+  goal.theta = goal_pose.theta;
 
   // Build grid‐based Dijkstra heuristic
   buildHeuristic(goal);
 
   // Sanity checks
   if (isInCollision(start)) {
-    RCLCPP_ERROR(logger,"Start in obstacle — abort");
+    log("Start in obstacle, abort");
     return std::nullopt;
   }
   if (isInCollision(goal)) {
-    RCLCPP_ERROR(logger,"Goal in obstacle — abort");
+    log("Goal in obstacle, abort");
     return std::nullopt;
   }
 
-  RCLCPP_INFO(logger,
-    "plan(): from (%.2f,%.2f,%.2f) to (%.2f,%.2f,%.2f)",
-    start.x, start.y, start.theta,
-    goal.x,  goal.y,  goal.theta);
+  {
+    char buf[128];
+    std::snprintf(buf, sizeof(buf),
+      "plan(): from (%.2f,%.2f,%.2f) to (%.2f,%.2f,%.2f)",
+      start.x, start.y, start.theta,
+      goal.x,  goal.y,  goal.theta);
+    log(buf);
+  }
 
   // Open set: min‐heap by f = g + h
   auto cmp = [](auto &a, auto &b){
@@ -93,10 +84,10 @@ std::optional<nav_msgs::msg::Path> HybridAStarPlanner::plan(
     return (uint64_t(ix)<<40) | (uint64_t(iy)<<20) | uint64_t(iyaw);
   };
   auto discretize = [&](const State &s){
-    double res = map_.info.resolution;
-    double ox  = map_.info.origin.position.x;
-    double oy  = map_.info.origin.position.y;
-    int W      = map_.info.width;
+    double res = map_.resolution;
+    double ox  = map_.origin_x;
+    double oy  = map_.origin_y;
+    int W      = map_.width;
 
     int ix = int(std::round((s.x - ox)/res));
     int iy = int(std::round((s.y - oy)/res));
@@ -105,7 +96,7 @@ std::optional<nav_msgs::msg::Path> HybridAStarPlanner::plan(
     int iyaw = int(std::floor(th/yaw_resolution_)) % yaw_bins_;
 
     ix = std::clamp(ix, 0, W-1);
-    iy = std::clamp(iy, 0, int(map_.info.height)-1);
+    iy = std::clamp(iy, 0, map_.height-1);
     return packKey(ix, iy, iyaw);
   };
 
@@ -124,6 +115,7 @@ std::optional<nav_msgs::msg::Path> HybridAStarPlanner::plan(
     uint64_t key = discretize(*current);
     if (closed_set.count(key)) continue;
     closed_set.insert(key);
+    ++expansions_;
 
     // 2) fallback: goal‐proximity
     double dx    = current->x - goal.x;
@@ -131,36 +123,19 @@ std::optional<nav_msgs::msg::Path> HybridAStarPlanner::plan(
     double dpos  = std::hypot(dx, dy);
     double dtheta= std::fabs(current->theta - goal.theta);
     if (dpos < pos_tol && dtheta < theta_tol) {
-      nav_msgs::msg::Path path_msg;
-      path_msg.header.frame_id = map_.header.frame_id;
-      path_msg.header.stamp    = map_.header.stamp;
+      std::vector<Pose2D> path;
 
       // prepend start
-      {
-        auto p = start_msg;
-        p.header = path_msg.header;
-        path_msg.poses.push_back(p);
-      }
+      path.push_back(start_pose);
       // backtrack
-      std::vector<geometry_msgs::msg::PoseStamped> tail;
+      std::vector<Pose2D> tail;
       for (auto s = current; s!=nullptr; s=s->parent) {
-        geometry_msgs::msg::PoseStamped ps;
-        ps.header = path_msg.header;
-        ps.pose.position.x = s->x;
-        ps.pose.position.y = s->y;
-        ps.pose.orientation.w = std::cos(s->theta/2.0);
-        ps.pose.orientation.z = std::sin(s->theta/2.0);
-        tail.push_back(ps);
+        tail.push_back({s->x, s->y, s->theta});
       }
       std::reverse(tail.begin(), tail.end());
-      path_msg.poses.insert(
-        path_msg.poses.end(),
-        tail.begin(), tail.end()
-      );
-      RCLCPP_INFO(logger,
-        "plan(): success → %zu poses",
-        path_msg.poses.size());
-      return path_msg;
+      path.insert(path.end(), tail.begin(), tail.end());
+      log("plan(): success, " + std::to_string(path.size()) + " poses");
+      return path;
     }
 
     // 3) expand non‐holonomic primitives (with full cost + sub‐step collision)
@@ -218,20 +193,19 @@ std::optional<nav_msgs::msg::Path> HybridAStarPlanner::plan(
     }
   }
 
-  RCLCPP_WARN(logger, "plan(): failed");
+  log("plan(): failed");
   return std::nullopt;
 }
 
 void HybridAStarPlanner::buildHeuristic(const State &goal) {
-  auto &info = map_.info;
-  int W = info.width, H = info.height;
-  double res = info.resolution;
+  int W = map_.width, H = map_.height;
+  double res = map_.resolution;
   heuristic_.assign(W*H, std::numeric_limits<double>::infinity());
 
   auto idx=[&](int x,int y){ return y*W + x; };
-  int gx = std::clamp(int((goal.x-info.origin.position.x)/res),
+  int gx = std::clamp(int((goal.x-map_.origin_x)/res),
                       0, W-1);
-  int gy = std::clamp(int((goal.y-info.origin.position.y)/res),
+  int gy = std::clamp(int((goal.y-map_.origin_y)/res),
                       0, H-1);
 
   using P = std::pair<double,int>;
@@ -261,22 +235,20 @@ void HybridAStarPlanner::buildHeuristic(const State &goal) {
 }
 
 double HybridAStarPlanner::computeHeuristic(const State &s) const {
-  auto &info = map_.info;
-  double res = info.resolution;
-  int gx = std::clamp(int((s.x-info.origin.position.x)/res),
-                      0, int(info.width)-1);
-  int gy = std::clamp(int((s.y-info.origin.position.y)/res),
-                      0, int(info.height)-1);
-  return kHybridWeight * heuristic_[gy * info.width + gx];
+  double res = map_.resolution;
+  int gx = std::clamp(int((s.x-map_.origin_x)/res),
+                      0, map_.width-1);
+  int gy = std::clamp(int((s.y-map_.origin_y)/res),
+                      0, map_.height-1);
+  return kHybridWeight * heuristic_[gy * map_.width + gx];
 }
 
 bool HybridAStarPlanner::isPointInObstacle(double x, double y) const {
-  auto &info = map_.info;
-  double res = info.resolution;
-  int ix = int(std::floor((x - info.origin.position.x)/res));
-  int iy = int(std::floor((y - info.origin.position.y)/res));
-  if(ix<0||iy<0||ix>=int(info.width)||iy>=int(info.height)) return true;
-  return map_.data[iy*info.width + ix] >= 100;
+  double res = map_.resolution;
+  int ix = int(std::floor((x - map_.origin_x)/res));
+  int iy = int(std::floor((y - map_.origin_y)/res));
+  if(ix<0||iy<0||ix>=map_.width||iy>=map_.height) return true;
+  return map_.data[iy*map_.width + ix] >= 100;
 }
 
 std::vector<std::pair<double,double>>
@@ -326,16 +298,15 @@ bool HybridAStarPlanner::isInCollision(const State &s) const {
 }
 
 void HybridAStarPlanner::buildObstacleKDTree() {
-  auto &info = map_.info;
-  double res = info.resolution;
+  double res = map_.resolution;
   obstacle_cloud_.points.clear();  
-  for(int y=0;y<int(info.height);++y){
-    for(int x=0;x<int(info.width);++x){
-      int idx = y*info.width + x;
+  for(int y=0;y<map_.height;++y){
+    for(int x=0;x<map_.width;++x){
+      int idx = y*map_.width + x;
       if(map_.data[idx]>=100){
         obstacle_cloud_.points.push_back({
-          info.origin.position.x + x*res,
-          info.origin.position.y + y*res
+          map_.origin_x + x*res,
+          map_.origin_y + y*res
         });
       }
     }
@@ -345,6 +316,10 @@ void HybridAStarPlanner::buildObstacleKDTree() {
     nanoflann::KDTreeSingleIndexAdaptorParams(10)
   ));
   obstacle_tree_->buildIndex();
+}
+
+void HybridAStarPlanner::log(const std::string& msg) const {
+  if (logger_) logger_(msg);
 }
 
 } // namespace hybrid_astar

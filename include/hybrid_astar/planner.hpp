@@ -1,12 +1,11 @@
 #pragma once
 
 #include "utils.hpp"
-#include <geometry_msgs/msg/pose_stamped.hpp>
+#include <functional>
 #include <memory>
 #include <nanoflann.hpp>
-#include <nav_msgs/msg/occupancy_grid.hpp>
-#include <nav_msgs/msg/path.hpp>
 #include <optional>
+#include <string>
 #include <vector>
 
 namespace hybrid_astar {
@@ -35,15 +34,20 @@ public:
                               double yaw_resolution,
                               int yaw_bins);
 
-  std::optional<nav_msgs::msg::Path> plan(
-    const geometry_msgs::msg::PoseStamped& start_msg,
-    const geometry_msgs::msg::PoseStamped& goal_msg,
-    const nav_msgs::msg::OccupancyGrid& map);
+  std::optional<std::vector<Pose2D>> plan(
+    const Pose2D& start_pose,
+    const Pose2D& goal_pose,
+    const GridMap& map);
 
   bool tryReedsSheppConnect(
     const State& current,
     const State& goal,
     std::vector<State>& path_states) const;
+
+  void setLogger(std::function<void(const std::string&)> logger) {
+    logger_ = std::move(logger);
+  }
+  int lastExpansions() const { return expansions_; }
 
 private:
   // Cost weights to match Python version
@@ -55,12 +59,14 @@ private:
 
   VehicleModel vehicle_model_;
   std::vector<MotionPrimitive> motion_primitives_;
-  nav_msgs::msg::OccupancyGrid map_;
+  GridMap map_;
   PointCloud obstacle_cloud_;
   std::unique_ptr<KDTree> obstacle_tree_;
   std::vector<double> heuristic_;
   double yaw_resolution_;
   int yaw_bins_;
+  std::function<void(const std::string&)> logger_;
+  int expansions_ = 0;
 
   void buildObstacleKDTree();
   std::vector<State> generateNextStates(const State& current);
@@ -71,6 +77,7 @@ private:
   bool isVehicleInCollision(const State& s) const;
   bool isPointInObstacle(double x, double y) const;
   std::vector<std::pair<double,double>> getVehicleCorners(const State& s) const;
+  void log(const std::string& msg) const;
 };
 
 } // namespace hybrid_astar

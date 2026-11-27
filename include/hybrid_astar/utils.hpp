@@ -1,8 +1,26 @@
 #pragma once
 
 #include <cmath>
+#include <cstdint>
 #include <memory>
 #include <vector>
+
+struct Pose2D {
+  double x     = 0.0;   // meters
+  double y     = 0.0;   // meters
+  double theta = 0.0;   // radians
+};
+
+// Same layout as nav_msgs/OccupancyGrid: row 0 is the bottom of the map
+// (smallest y), values are 0..100 and 100 means occupied.
+struct GridMap {
+  int width  = 0;
+  int height = 0;
+  double resolution = 0.1;   // meters per cell
+  double origin_x = 0.0;     // world position of cell (0,0)'s corner
+  double origin_y = 0.0;
+  std::vector<int8_t> data;
+};
 
 struct VehicleModel {
   double wheel_base = 2.5;                // meters
