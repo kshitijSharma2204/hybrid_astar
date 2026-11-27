@@ -30,6 +30,8 @@ const std::vector<Field>& fields() {
     {"xy_resolution",         &PlannerConfig::xy_resolution,         nullptr, 1e-3},
     {"heading_bins",          nullptr, &PlannerConfig::heading_bins,          4},
     {"max_expansions",        nullptr, &PlannerConfig::max_expansions,        1},
+    {"collision_mode",        nullptr, &PlannerConfig::collision_mode,        0},
+    {"collision_circles",     nullptr, &PlannerConfig::collision_circles,     1},
     {"goal_pos_tol",          &PlannerConfig::goal_pos_tol,          nullptr, 0},
     {"goal_heading_tol",      &PlannerConfig::goal_heading_tol,      nullptr, 0},
     {"analytic_expansion_interval", nullptr, &PlannerConfig::analytic_expansion_interval, 0},
@@ -63,6 +65,9 @@ void setConfigValue(PlannerConfig& cfg, const std::string& key, double value) {
     }
     if (f.i) {
       if (value != std::floor(value)) throw std::runtime_error(key + " must be an integer");
+      if (key == "collision_mode" && value > 2) {
+        throw std::runtime_error("collision_mode must be 0, 1 or 2");
+      }
       cfg.*f.i = int(value);
     } else {
       cfg.*f.d = value;

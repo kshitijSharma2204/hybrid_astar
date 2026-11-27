@@ -45,6 +45,12 @@ py::array_t<T> column(size_t n, F f) {
   return a;
 }
 
+GridMap toGrid(py::object grid, double resolution, std::pair<double, double> origin) {
+  if (py::isinstance<GridMap>(grid)) return grid.cast<GridMap>();
+  if (resolution <= 0) throw py::value_error("pass resolution= when grid is a numpy array");
+  return gridFromArray(grid.cast<Int8Array>(), resolution, origin);
+}
+
 py::array_t<double> traceNodes(const SearchTrace& t, size_t from, size_t to) {
   py::array_t<double> a({to - from, size_t(4)});
   auto m = a.template mutable_unchecked<2>();
@@ -58,10 +64,8 @@ py::array_t<double> traceNodes(const SearchTrace& t, size_t from, size_t to) {
   return a;
 }
 
-PlanResult runPlan(const GridMap& grid, const Pose2D& start, const Pose2D& goal,
-                   const PlannerConfig& cfg, bool record_trace,
-                   py::object on_progress, int every) {
-  HybridAStarPlanner planner(cfg);
+PlanResult runPlan(HybridAStarPlanner& planner, const Pose2D& start, const Pose2D& goal,
+                   bool record_trace, py::object on_progress, int every) {
   PlanOptions opts;
   opts.record_trace = record_trace || !on_progress.is_none();
   opts.progress_every = every;
@@ -77,7 +81,7 @@ PlanResult runPlan(const GridMap& grid, const Pose2D& start, const Pose2D& goal,
   PlanResult r;
   {
     py::gil_scoped_release no_gil;
-    r = planner.plan(grid, start, goal, opts);
+    r = planner.plan(start, goal, opts);
   }
   if (!record_trace) r.trace.reset();
   return r;
@@ -189,6 +193,27 @@ PYBIND11_MODULE(hybrid_astar, m) {
     .def_readonly("start", &Scenario::start)
     .def_readonly("goal", &Scenario::goal);
 
+  py::class_<HybridAStarPlanner>(m, "Planner",
+      "Keeps the collision lookups for one map, for planning many times on it.")
+    .def(py::init<const PlannerConfig&>(), py::arg("config") = PlannerConfig{})
+    .def("set_map",
+         [](HybridAStarPlanner& p, py::object grid, double resolution,
+            std::pair<double, double> origin) {
+           GridMap g = toGrid(grid, resolution, origin);
+           py::gil_scoped_release no_gil;
+           p.setMap(g);
+         },
+         py::arg("grid"), py::arg("resolution") = 0.0,
+         py::arg("origin") = std::make_pair(0.0, 0.0))
+    .def("plan",
+         [](HybridAStarPlanner& p, const Pose2D& start, const Pose2D& goal,
+            bool record_trace, py::object on_progress, int every) {
+           return runPlan(p, start, goal, record_trace, on_progress, every);
+         },
+         py::arg("start"), py::arg("goal"), py::arg("record_trace") = false,
+         py::arg("on_progress") = py::none(), py::arg("every") = 1000)
+    .def_property_readonly("setup_ms", &HybridAStarPlanner::setupMs);
+
   m.def("load_config", &loadConfig, py::arg("path"));
   m.def("load_scenario", &loadScenario, py::arg("path"));
 
@@ -197,16 +222,9 @@ PYBIND11_MODULE(hybrid_astar, m) {
        std::optional<PlannerConfig> config, bool record_trace,
        double resolution, std::pair<double, double> origin,
        py::object on_progress, int every) {
-      PlannerConfig cfg = config ? *config : PlannerConfig{};
-      if (py::isinstance<GridMap>(grid)) {
-        return runPlan(grid.cast<const GridMap&>(), start, goal, cfg,
-                       record_trace, on_progress, every);
-      }
-      if (resolution <= 0) {
-        throw py::value_error("pass resolution= when grid is a numpy array");
-      }
-      GridMap g = gridFromArray(grid.cast<Int8Array>(), resolution, origin);
-      return runPlan(g, start, goal, cfg, record_trace, on_progress, every);
+      HybridAStarPlanner planner(config ? *config : PlannerConfig{});
+      planner.setMap(toGrid(grid, resolution, origin));
+      return runPlan(planner, start, goal, record_trace, on_progress, every);
     },
     py::arg("grid"), py::arg("start"), py::arg("goal"), py::arg("config") = py::none(),
     py::arg("record_trace") = false, py::arg("resolution") = 0.0,

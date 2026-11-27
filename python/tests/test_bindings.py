@@ -93,3 +93,14 @@ def test_progress_callback_sees_every_node():
                 on_progress=lambda n: chunks.append(n.copy()), every=500)
     seen = sum(len(c) for c in chunks)
     assert seen == (r.stats.expansions // 500) * 500
+
+
+def test_planner_reuses_the_map():
+    sc = ha.load_scenario(scenario("S3"))
+    p = ha.Planner(ha.load_config(PARAMS))
+    p.set_map(sc.grid)
+    assert p.setup_ms > 0
+    a = p.plan(sc.start, sc.goal)
+    b = p.plan(sc.start, sc.goal)
+    assert a.success and b.success
+    assert np.array_equal(a.x, b.x)

@@ -44,6 +44,8 @@ struct PlannerConfig {
   double xy_resolution  = 0.2;    // m, cell size of the closed set
   int    heading_bins   = 72;
   int    max_expansions = 200000;
+  int    collision_mode = 2;      // 0 exact, 1 circles, 2 circles then exact
+  int    collision_circles = 4;   // discs covering the footprint
   double goal_pos_tol     = 0.5;  // m, only used when analytic expansion is off
   double goal_heading_tol = 0.3;  // rad, same
 

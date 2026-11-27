@@ -72,22 +72,22 @@ void writeTrace(const std::string& file, const SearchTrace& t) {
 const char* kStatsHeader =
   "scenario,label,run,success,expansions,search_ms,smooth_ms,length,"
   "reverse_length,switches,max_curvature_raw,max_curvature,min_clearance,"
-  "goal_pos_error,goal_heading_error,cost\n";
+  "goal_pos_error,goal_heading_error,cost,setup_ms\n";
 
 void appendStats(const std::string& file, const std::string& scenario,
                  const std::string& label, int run, const PlanResult& r,
-                 const PathMetrics& m, double max_curv_raw) {
+                 const PathMetrics& m, double max_curv_raw, double setup_ms) {
   bool fresh = !std::ifstream(file).good();
   std::ofstream out(file, std::ios::app);
   if (!out) throw std::runtime_error("cannot write " + file);
   if (fresh) out << kStatsHeader;
   char buf[512];
   std::snprintf(buf, sizeof(buf),
-    "%s,%s,%d,%d,%d,%.3f,%.3f,%.3f,%.3f,%d,%.5f,%.5f,%.3f,%.3g,%.3g,%.3f\n",
+    "%s,%s,%d,%d,%d,%.3f,%.3f,%.3f,%.3f,%d,%.5f,%.5f,%.3f,%.3g,%.3g,%.3f,%.3f\n",
     scenario.c_str(), label.c_str(), run, r.stats.success ? 1 : 0,
     r.stats.expansions, r.stats.search_ms, r.stats.smooth_ms, m.length,
     m.reverse_length, m.direction_switches, max_curv_raw, m.max_curvature,
-    m.min_clearance, m.goal_pos_error, m.goal_heading_error, m.cost);
+    m.min_clearance, m.goal_pos_error, m.goal_heading_error, m.cost, setup_ms);
   out << buf;
 }
 
@@ -134,11 +134,13 @@ int main(int argc, char** argv) {
     HybridAStarPlanner planner(cfg);
     if (verbose) planner.setLogger([](const std::string& m) { std::cerr << m << "\n"; });
 
+    // The collision lookups are built once; every run reuses them.
+    planner.setMap(sc.grid);
     PlanResult r;
     for (int run = 0; run < repeat; ++run) {
       PlanOptions opts;
       opts.record_trace = !trace_file.empty() && run == 0;
-      r = planner.plan(sc.grid, sc.start, sc.goal, opts);
+      r = planner.plan(sc.start, sc.goal, opts);
       PathMetrics m = computeMetrics(r.poses, r.direction, sc.grid, cfg, sc.goal);
       std::printf("scenario=%s run=%d success=%d expansions=%d search_ms=%.3f "
                   "smooth_ms=%.3f length=%.2f switches=%d poses=%zu\n",
@@ -147,7 +149,8 @@ int main(int argc, char** argv) {
                   m.direction_switches, r.poses.size());
       if (!r.stats.success) std::fprintf(stderr, "%s\n", r.message.c_str());
       if (!stats_file.empty()) {
-        appendStats(stats_file, sc.name, label, run, r, m, m.max_curvature);
+        appendStats(stats_file, sc.name, label, run, r, m, m.max_curvature,
+                    run == 0 ? planner.setupMs() : 0.0);
       }
       if (run == 0) {
         if (r.stats.success && !out_file.empty()) writePath(out_file, r);

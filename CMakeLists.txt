@@ -36,6 +36,9 @@ target_link_libraries(hybrid_astar_core PUBLIC ${OMPL_LIBRARIES})
 add_executable(hybrid_astar_cli src/cli.cpp)
 target_link_libraries(hybrid_astar_cli PRIVATE hybrid_astar_core)
 
+add_executable(collision_bench tools/collision_bench.cpp)
+target_link_libraries(collision_bench PRIVATE hybrid_astar_core)
+
 option(BUILD_TESTING "Build the unit tests" ON)
 if(BUILD_TESTING)
   enable_testing()

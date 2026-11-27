@@ -20,23 +20,41 @@ HybridAStarPlanner::HybridAStarPlanner(const PlannerConfig& config)
     config_.step_size / config_.collision_step - 1e-9)));
 }
 
+void HybridAStarPlanner::setMap(const GridMap& map) {
+  auto t0 = std::chrono::steady_clock::now();
+  map_ = map;
+  checker_ = std::make_unique<CollisionChecker>(map_, config_);
+  setup_ms_ = std::chrono::duration<double, std::milli>(
+    std::chrono::steady_clock::now() - t0).count();
+}
+
 PlanResult HybridAStarPlanner::plan(
     const GridMap& map,
     const Pose2D& start_pose,
     const Pose2D& goal_pose,
     const PlanOptions& options)
 {
+  setMap(map);
+  return plan(start_pose, goal_pose, options);
+}
+
+PlanResult HybridAStarPlanner::plan(
+    const Pose2D& start_pose,
+    const Pose2D& goal_pose,
+    const PlanOptions& options)
+{
+  PlanResult result;
+  if (!checker_) {
+    result.message = "no map, call setMap() first";
+    return result;
+  }
   auto t_start = std::chrono::steady_clock::now();
   auto elapsedMs = [&]() {
     return std::chrono::duration<double, std::milli>(
       std::chrono::steady_clock::now() - t_start).count();
   };
-  PlanResult result;
   if (options.record_trace) result.trace.emplace();
   SearchTrace* trace = result.trace ? &*result.trace : nullptr;
-  map_ = map;
-  checker_ = std::make_unique<CollisionChecker>(map_, config_);
-  buildObstacleKDTree();
   nodes_.clear();
 
   Node start;
@@ -311,26 +329,6 @@ bool HybridAStarPlanner::tryReedsSheppConnect(int node, const Node& goal,
 
 bool HybridAStarPlanner::isInCollision(const Node &s) const {
   return checker_->inCollision({s.x, s.y, s.theta});
-}
-
-void HybridAStarPlanner::buildObstacleKDTree() {
-  obstacle_cloud_.points.clear();
-  for(int y=0;y<map_.height;++y){
-    for(int x=0;x<map_.width;++x){
-      int idx = y*map_.width + x;
-      if(map_.data[idx]>=100){
-        obstacle_cloud_.points.push_back({
-          cellCenterX(map_, x),
-          cellCenterY(map_, y)
-        });
-      }
-    }
-  }
-  obstacle_tree_.reset(new KDTree(
-    2, obstacle_cloud_,
-    nanoflann::KDTreeSingleIndexAdaptorParams(10)
-  ));
-  obstacle_tree_->buildIndex();
 }
 
 void HybridAStarPlanner::log(const std::string& msg) const {
