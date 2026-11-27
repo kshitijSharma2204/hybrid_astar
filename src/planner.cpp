@@ -1,5 +1,7 @@
 #include "hybrid_astar/planner.hpp"
 
+#include "hybrid_astar/geometry.hpp"
+
 #include <ompl/base/ScopedState.h>
 #include <ompl/base/spaces/ReedsSheppStateSpace.h>
 
@@ -41,7 +43,7 @@ PlanResult HybridAStarPlanner::plan(
   State start;
   start.x = start_pose.x;
   start.y = start_pose.y;
-  start.theta = start_pose.theta;
+  start.theta = wrapAngle(start_pose.theta);
   start.g = 0.0; start.h = 0.0;
   start.parent = nullptr;
   start.is_reverse = false;
@@ -51,7 +53,7 @@ PlanResult HybridAStarPlanner::plan(
   State goal;
   goal.x = goal_pose.x;
   goal.y = goal_pose.y;
-  goal.theta = goal_pose.theta;
+  goal.theta = wrapAngle(goal_pose.theta);
 
   // Build grid‐based Dijkstra heuristic
   buildHeuristic(goal);
@@ -99,7 +101,7 @@ PlanResult HybridAStarPlanner::plan(
 
     int ix = int(std::round((s.x - ox)/res));
     int iy = int(std::round((s.y - oy)/res));
-    double th = std::fmod(s.theta, 2*M_PI);
+    double th = s.theta;   // already in (-pi, pi]
     if (th < 0) th += 2*M_PI;
     int iyaw = int(std::floor(th/yaw_resolution_)) % config_.heading_bins;
 
@@ -139,7 +141,7 @@ PlanResult HybridAStarPlanner::plan(
     double dx    = current->x - goal.x;
     double dy    = current->y - goal.y;
     double dpos  = std::hypot(dx, dy);
-    double dtheta= std::fabs(current->theta - goal.theta);
+    double dtheta= std::fabs(angleDiff(current->theta, goal.theta));
     if (dpos < pos_tol && dtheta < theta_tol) {
       // prepend start
       result.poses.push_back(start_pose);

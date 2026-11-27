@@ -1,4 +1,5 @@
 #include "hybrid_astar/config.hpp"
+#include "hybrid_astar/geometry.hpp"
 #include "hybrid_astar/planner.hpp"
 #include "hybrid_astar/scenario.hpp"
 
@@ -40,8 +41,22 @@ TEST(Planner, S1MatchesV1Baseline) {
   for (size_t i = 0; i < baseline.size(); ++i) {
     EXPECT_NEAR(r.poses[i].x, baseline[i].x, 1e-5) << i;
     EXPECT_NEAR(r.poses[i].y, baseline[i].y, 1e-5) << i;
-    EXPECT_NEAR(r.poses[i].theta, baseline[i].theta, 1e-5) << i;
+    // v1 never wrapped headings, so compare them modulo 2 pi
+    EXPECT_NEAR(angleDiff(r.poses[i].theta, baseline[i].theta), 0.0, 1e-5) << i;
   }
+}
+
+TEST(Planner, GoalCheckWrapsHeading) {
+  // Start and goal at the same spot, headings 3.1 and -3.1 rad: 0.083 rad
+  // apart, inside the 0.3 rad tolerance. v1 compared them as 6.2 rad apart.
+  GridMap g;
+  g.width = g.height = 200;
+  g.resolution = 0.1;
+  g.data.assign(200 * 200, 0);
+  HybridAStarPlanner planner(PlannerConfig{});
+  PlanResult r = planner.plan(g, {10.0, 10.0, 3.1}, {10.0, 10.0, -3.1});
+  ASSERT_TRUE(r.stats.success) << r.message;
+  EXPECT_EQ(r.stats.expansions, 1);
 }
 
 TEST(Planner, ScenarioLoaderReadsS1) {

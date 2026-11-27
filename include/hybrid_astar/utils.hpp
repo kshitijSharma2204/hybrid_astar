@@ -1,5 +1,6 @@
 #pragma once
 
+#include "hybrid_astar/geometry.hpp"
 #include "hybrid_astar/types.hpp"
 
 #include <cmath>
@@ -46,13 +47,14 @@ generateMotionPrimitives(const PlannerConfig& cfg) {
 }
 
 // Pose after driving a signed distance l (negative = reverse) at a fixed
-// steering angle. Uses the v1 update: move l along the mean heading.
+// steering angle. Uses the v1 update: move l along the mean heading. The
+// heading comes back wrapped to (-pi, pi].
 inline Pose2D primitivePose(const Pose2D& from, double steer, double l,
                             double wheel_base) {
   double beta = (l / wheel_base) * std::tan(steer);
   return {from.x + l * std::cos(from.theta + beta * 0.5),
           from.y + l * std::sin(from.theta + beta * 0.5),
-          from.theta + beta};
+          wrapAngle(from.theta + beta)};
 }
 
 } // namespace hybrid_astar
