@@ -48,7 +48,8 @@ the car. `docs/RESULTS.md` has the details and the v1 vs v2 numbers.
 Ubuntu 24.04:
 
 ```bash
-sudo apt install cmake ninja-build g++ libompl-dev libeigen3-dev libgtest-dev python3-dev python3-venv
+sudo apt install cmake ninja-build g++ libompl-dev libeigen3-dev libgtest-dev python3-dev python3-venv \
+    libboost-serialization-dev libboost-filesystem-dev libboost-system-dev
 tools/setup_venv.sh        # .venv with numpy, matplotlib, PyYAML, pytest
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DPython_EXECUTABLE=$PWD/.venv/bin/python
 cmake --build build
