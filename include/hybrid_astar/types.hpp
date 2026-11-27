@@ -54,6 +54,18 @@ struct PlannerConfig {
   double analytic_expansion_distance = 10.0;  // m, try on every expansion when closer
   double rs_sample_step = 0.1;                // m between collision checks on the curve
 
+  // smoothing, see smoother.hpp
+  int    smooth_enabled       = 1;
+  int    smooth_iterations    = 300;
+  double smooth_spacing       = 0.5;    // m between control points
+  double smooth_rate          = 0.5;    // gradient step, as a fraction of the stable maximum
+  double smooth_w_smooth      = 1.0;
+  double smooth_w_obstacle    = 0.05;
+  double smooth_w_curvature   = 200.0;
+  double smooth_w_length      = 1.0;    // keeps control points evenly spaced
+  double smooth_obstacle_dmax = 1.0;    // m, footprint discs closer than this are pushed out
+  double smooth_curvature_limit = 1.05; // keep a smoothed run only if max curvature <= this / R_min
+
   // cost weights
   double reverse_penalty       = 1.5;   // multiplier on reverse distance
   double direction_change_cost = 5.0;
@@ -70,6 +82,8 @@ struct PlanStats {
   int    expansions = 0;
   double search_ms  = 0.0;
   double smooth_ms  = 0.0;
+  int    smooth_segments = 0;
+  int    smooth_fallbacks = 0;   // segments left unsmoothed (collision or curvature)
 };
 
 // What the search did, in order. Only filled when PlanOptions asks for it.
@@ -96,8 +110,10 @@ struct PlanOptions {
 };
 
 struct PlanResult {
-  std::vector<Pose2D> poses;
+  std::vector<Pose2D> poses;    // final path, smoothed if smoothing is on
   std::vector<int> direction;   // per pose: +1 forward, -1 reverse
+  std::vector<Pose2D> raw_poses;  // the search path before smoothing
+  std::vector<int> raw_direction;
   PlanStats stats;
   std::string message;
   std::optional<SearchTrace> trace;

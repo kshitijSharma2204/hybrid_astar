@@ -147,7 +147,9 @@ PYBIND11_MODULE(hybrid_astar, m) {
     .def_readonly("success", &PlanStats::success)
     .def_readonly("expansions", &PlanStats::expansions)
     .def_readonly("search_ms", &PlanStats::search_ms)
-    .def_readonly("smooth_ms", &PlanStats::smooth_ms);
+    .def_readonly("smooth_ms", &PlanStats::smooth_ms)
+    .def_readonly("smooth_segments", &PlanStats::smooth_segments)
+    .def_readonly("smooth_fallbacks", &PlanStats::smooth_fallbacks);
 
   py::class_<SearchTrace::RsAttempt>(m, "RsAttempt")
     .def_readonly("node", &SearchTrace::RsAttempt::node)
@@ -182,6 +184,19 @@ PYBIND11_MODULE(hybrid_astar, m) {
     })
     .def_property_readonly("theta", [](const PlanResult& r) {
       return column<double>(r.poses.size(), [&](size_t i) { return r.poses[i].theta; });
+    })
+    .def_property_readonly("raw_x", [](const PlanResult& r) {
+      return column<double>(r.raw_poses.size(), [&](size_t i) { return r.raw_poses[i].x; });
+    }, "path before smoothing")
+    .def_property_readonly("raw_y", [](const PlanResult& r) {
+      return column<double>(r.raw_poses.size(), [&](size_t i) { return r.raw_poses[i].y; });
+    })
+    .def_property_readonly("raw_theta", [](const PlanResult& r) {
+      return column<double>(r.raw_poses.size(), [&](size_t i) { return r.raw_poses[i].theta; });
+    })
+    .def_property_readonly("raw_direction", [](const PlanResult& r) {
+      return column<int8_t>(r.raw_direction.size(),
+                            [&](size_t i) { return int8_t(r.raw_direction[i]); });
     })
     .def_property_readonly("direction", [](const PlanResult& r) {
       return column<int8_t>(r.direction.size(), [&](size_t i) { return int8_t(r.direction[i]); });

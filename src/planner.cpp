@@ -1,6 +1,7 @@
 #include "hybrid_astar/planner.hpp"
 
 #include "hybrid_astar/geometry.hpp"
+#include "hybrid_astar/smoother.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -164,6 +165,21 @@ PlanResult HybridAStarPlanner::plan(
     if (done) {
       result.stats.success = true;
       result.stats.search_ms = elapsedMs();
+      result.raw_poses = result.poses;
+      result.raw_direction = result.direction;
+      if (config_.smooth_enabled) {
+        auto t_smooth = std::chrono::steady_clock::now();
+        SmoothResult sm = smoothPath(result.poses, result.direction, *checker_, config_);
+        result.poses = std::move(sm.poses);
+        result.direction = std::move(sm.direction);
+        result.stats.smooth_segments = sm.segments;
+        result.stats.smooth_fallbacks = sm.collision_fallbacks + sm.curvature_fallbacks;
+        result.stats.smooth_ms = std::chrono::duration<double, std::milli>(
+          std::chrono::steady_clock::now() - t_smooth).count();
+        log("smoothing: " + std::to_string(sm.segments) + " segments, " +
+            std::to_string(sm.collision_fallbacks) + " put back for collisions, " +
+            std::to_string(sm.curvature_fallbacks) + " for curvature");
+      }
       result.message = "found a path with " +
                        std::to_string(result.poses.size()) + " poses";
       log("plan(): " + result.message);

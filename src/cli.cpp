@@ -72,7 +72,7 @@ void writeTrace(const std::string& file, const SearchTrace& t) {
 const char* kStatsHeader =
   "scenario,label,run,success,expansions,search_ms,smooth_ms,length,"
   "reverse_length,switches,max_curvature_raw,max_curvature,min_clearance,"
-  "goal_pos_error,goal_heading_error,cost,setup_ms\n";
+  "goal_pos_error,goal_heading_error,cost,setup_ms,smooth_fallbacks\n";
 
 void appendStats(const std::string& file, const std::string& scenario,
                  const std::string& label, int run, const PlanResult& r,
@@ -83,11 +83,12 @@ void appendStats(const std::string& file, const std::string& scenario,
   if (fresh) out << kStatsHeader;
   char buf[512];
   std::snprintf(buf, sizeof(buf),
-    "%s,%s,%d,%d,%d,%.3f,%.3f,%.3f,%.3f,%d,%.5f,%.5f,%.3f,%.3g,%.3g,%.3f,%.3f\n",
+    "%s,%s,%d,%d,%d,%.3f,%.3f,%.3f,%.3f,%d,%.5f,%.5f,%.3f,%.3g,%.3g,%.3f,%.3f,%d\n",
     scenario.c_str(), label.c_str(), run, r.stats.success ? 1 : 0,
     r.stats.expansions, r.stats.search_ms, r.stats.smooth_ms, m.length,
     m.reverse_length, m.direction_switches, max_curv_raw, m.max_curvature,
-    m.min_clearance, m.goal_pos_error, m.goal_heading_error, m.cost, setup_ms);
+    m.min_clearance, m.goal_pos_error, m.goal_heading_error, m.cost, setup_ms,
+    r.stats.smooth_fallbacks);
   out << buf;
 }
 
@@ -149,7 +150,9 @@ int main(int argc, char** argv) {
                   m.direction_switches, r.poses.size());
       if (!r.stats.success) std::fprintf(stderr, "%s\n", r.message.c_str());
       if (!stats_file.empty()) {
-        appendStats(stats_file, sc.name, label, run, r, m, m.max_curvature,
+        double raw_curv = r.raw_poses.empty() ? m.max_curvature
+                                              : maxCurvature(r.raw_poses, r.raw_direction);
+        appendStats(stats_file, sc.name, label, run, r, m, raw_curv,
                     run == 0 ? planner.setupMs() : 0.0);
       }
       if (run == 0) {

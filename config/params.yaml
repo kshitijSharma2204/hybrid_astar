@@ -26,6 +26,18 @@ analytic_expansion_interval: 10    # try every N expansions, 0 = off
 analytic_expansion_distance: 10.0  # m, try on every expansion when this close
 rs_sample_step: 0.1                # m between collision checks on the curve
 
+# smoothing (gradient descent on each run between cusps, see smoother.hpp)
+smooth_enabled: 1
+smooth_iterations: 300
+smooth_spacing: 0.5          # m between the control points that get moved
+smooth_rate: 0.5             # gradient step, as a fraction of the largest stable one
+smooth_w_smooth: 1.0         # weight on squared second differences
+smooth_w_obstacle: 0.05      # weight on getting closer than smooth_obstacle_dmax
+smooth_w_curvature: 200.0    # weight on turning tighter than 1 / R_min
+smooth_w_length: 1.0         # weight on keeping control points evenly spaced
+smooth_obstacle_dmax: 1.0    # m
+smooth_curvature_limit: 1.05 # a smoothed run is kept only if it turns no tighter than this / R_min
+
 # costs
 reverse_penalty: 1.5           # multiplier on distance driven in reverse
 direction_change_cost: 5.0     # added at every forward/reverse switch
