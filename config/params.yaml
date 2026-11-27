@@ -11,7 +11,10 @@ vehicle_width: 2.0       # m
 # search
 step_size: 1.0           # m per motion primitive
 collision_step: 0.2      # m between collision checks along a primitive
+steer_samples: 3         # steering angles from -max_steer to +max_steer
+xy_resolution: 0.1       # m, cell size of the closed set
 heading_bins: 24         # 15 degrees each
+max_expansions: 1000000  # give up after this many
 goal_pos_tol: 0.5        # m
 goal_heading_tol: 0.3    # rad
 

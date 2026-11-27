@@ -36,7 +36,10 @@ struct PlannerConfig {
   // search
   double step_size      = 1.0;    // m per motion primitive
   double collision_step = 0.2;    // m between collision checks on a primitive
+  int    steer_samples  = 3;      // steering angles from -max_steer to +max_steer
+  double xy_resolution  = 0.1;    // m, cell size of the closed set
   int    heading_bins   = 24;
+  int    max_expansions = 1000000;
   double goal_pos_tol     = 0.5;  // m
   double goal_heading_tol = 0.3;  // rad
 

@@ -32,14 +32,12 @@ struct MotionPrimitive {
 inline std::vector<MotionPrimitive>
 generateMotionPrimitives(const PlannerConfig& cfg) {
   std::vector<MotionPrimitive> primitives;
-  // full left, straight, full right; forward and reverse
-  std::vector<double> steers = {
-    -cfg.max_steer,
-     0.0,
-     cfg.max_steer
-  };
+  // steer_samples angles evenly spaced from full right to full left,
+  // each driven forward and in reverse
+  const int n = cfg.steer_samples;
   for (bool rev : {false,true}) {
-    for (double a : steers) {
+    for (int i = 0; i < n; ++i) {
+      double a = -cfg.max_steer + 2.0 * cfg.max_steer * i / (n - 1);
       primitives.push_back({a, rev});
     }
   }

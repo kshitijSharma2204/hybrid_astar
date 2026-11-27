@@ -90,20 +90,26 @@ PlanResult HybridAStarPlanner::plan(
   > open_set(cmp);
 
   // Discretizer
+  GridMap closed_grid;
+  closed_grid.resolution = config_.xy_resolution;
+  closed_grid.origin_x = map_.origin_x;
+  closed_grid.origin_y = map_.origin_y;
+  closed_grid.width = int(std::ceil(map_.width * map_.resolution / config_.xy_resolution));
+  closed_grid.height = int(std::ceil(map_.height * map_.resolution / config_.xy_resolution));
   auto packKey = [&](int ix,int iy,int iyaw){
     return (uint64_t(ix)<<40) | (uint64_t(iy)<<20) | uint64_t(iyaw);
   };
   auto discretize = [&](const State &s){
-    int W      = map_.width;
-
-    int ix = worldToCellX(map_, s.x);
-    int iy = worldToCellY(map_, s.y);
+    // The closed set has its own cell size, so build a grid header for it
+    // and keep using the one conversion function.
+    int ix = worldToCellX(closed_grid, s.x);
+    int iy = worldToCellY(closed_grid, s.y);
     double th = s.theta;   // already in (-pi, pi]
     if (th < 0) th += 2*M_PI;
     int iyaw = int(std::floor(th/yaw_resolution_)) % config_.heading_bins;
 
-    ix = std::clamp(ix, 0, W-1);
-    iy = std::clamp(iy, 0, map_.height-1);
+    ix = std::clamp(ix, 0, closed_grid.width-1);
+    iy = std::clamp(iy, 0, closed_grid.height-1);
     return packKey(ix, iy, iyaw);
   };
 
@@ -118,6 +124,12 @@ PlanResult HybridAStarPlanner::plan(
 
   // main A* loop
   while (!open_set.empty()) {
+    if (result.stats.expansions >= config_.max_expansions) {
+      result.stats.search_ms = elapsedMs();
+      result.message = "gave up after max_expansions";
+      log("plan(): " + result.message);
+      return result;
+    }
     auto current = open_set.top(); open_set.pop();
 
     uint64_t key = discretize(*current);
