@@ -1,0 +1,14 @@
+$ hybrid_astar_cli --scenario scenarios/S2_tight.txt
+open set exhausted, no path
+scenario=S2_tight run=0 success=0 expansions=62531 search_ms=2773.889 smooth_ms=0.000 length=0.00 switches=0 poses=0
+
+$ hybrid_astar_cli --scenario scenarios/S2_tight.txt --set step_size=0.2 --set collision_step=0.1 --set heading_bins=180 --set steer_samples=5 --set xy_resolution=0.05 --set heuristic_weight=1.5 --set reverse_penalty=1.5 --set direction_change_cost=1
+gave up after max_expansions
+scenario=S2_tight run=0 success=0 expansions=200000 search_ms=9203.611 smooth_ms=0.000 length=0.00 switches=0 poses=0
+
+$ hybrid_astar_cli --scenario scenarios/S2_tight_exit.txt --set step_size=0.2 --set collision_step=0.1 --set heading_bins=180 --set steer_samples=5 --set xy_resolution=0.05 --set heuristic_weight=1.5 --set reverse_penalty=1.5 --set direction_change_cost=1 --set shortcut_enabled=0 --set smooth_enabled=0
+scenario=S2_tight_exit run=0 success=1 expansions=377 search_ms=28.029 smooth_ms=0.000 length=15.39 switches=11 poses=157
+
+$ hybrid_astar_cli --scenario scenarios/S2_tight_exit.txt --set step_size=0.2 --set collision_step=0.1 --set heading_bins=180 --set steer_samples=5 --set xy_resolution=0.05 --set heuristic_weight=1.5 --set reverse_penalty=1.5 --set direction_change_cost=1 --set steer_cost=1 --set steer_change_cost=5
+open set exhausted, no path
+scenario=S2_tight_exit run=0 success=0 expansions=149 search_ms=28.806 smooth_ms=0.000 length=0.00 switches=0 poses=0

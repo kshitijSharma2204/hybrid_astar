@@ -1,39 +1,184 @@
-#  Hybrid A* Path Planning Demo
+# Hybrid A* path planner
 
-This repository demonstrates a Hybrid A* planner in ROS 2, with both a C++ planning node
-and Python tools to publish the environment and visualize the result.
+A Hybrid A* planner for a car-like vehicle on an occupancy grid, written in
+C++, with Python bindings and matplotlib plots and animations of the search.
 
-## Prerequisites
+![S1: the search tree grows, then the path is drawn and the car drives it](results/v2/S1_search.gif)
 
-- Ubuntu 22.04 / ROS 2 Humble (or later)
-- `colcon` build tool
-- OMPL (install with `(https://ompl.kavrakilab.org/core/installation.html)`)
-- Python packages:
-  ```bash
-  pip install matplotlib numpy
-  ```
+Blue lines are the search tree, dashed orange lines are Reeds-Shepp shots at
+the goal that hit something, blue is forward driving and red is reverse.
 
-## Build Instructions
+## What it does
+
+- Searches over (x, y, heading) with motion primitives: 0.5 m arcs at 5
+  steering angles, forward and in reverse, for a car with a 2.5 m wheelbase,
+  0.45 rad max steer (5.17 m turning radius) and a 4.5 x 2.0 m footprint.
+- Heuristic: the larger of the 2D distance to the goal around obstacles and
+  the obstacle-free Reeds-Shepp length.
+- Analytic expansion: every 10 expansions, and on every expansion once it is
+  within 10 m, it tries the shortest Reeds-Shepp curve to the goal. When one
+  is collision-free the search stops, so the path ends exactly on the goal
+  pose.
+- Collision checks: four covering circles against a distance map first,
+  then an exact check of every grid cell under the car for poses the circles
+  reject.
+- Shortcutting: within each stretch between direction changes, poses are
+  joined by shorter collision-free Reeds-Shepp curves that keep the
+  direction, which takes out the zig-zag the 0.5 m primitives leave.
+- Smoothing: each stretch between direction changes is then smoothed on its
+  own, keeping clear of obstacles and within the turning radius. Start, goal
+  and cusps do not move.
+- All parameters are in `config/params.yaml`.
+
+## v1 and why ROS is gone
+
+v1 was a ROS 2 package; it is kept at the tag `v1-ros2`. ROS only carried
+data from the C++ planner to a Python script that animated the result: the
+planner ran once and published the path, and nothing was live. That does not
+need ROS, so v2 is a plain CMake project. The planner is a library, there is
+a command line tool that writes CSV, and Python calls the planner directly
+through pybind11.
+
+Apart from that, v2 fixes a number of things in v1: the Reeds-Shepp
+expansion was declared but never written, so v1 stopped anywhere within
+0.5 m and 0.3 rad of the goal; headings were never wrapped; there was no
+smoothing; params.yaml was never read; the car turned about its centre
+instead of its rear axle; and the collision check could miss cells under
+the car. `docs/RESULTS.md` has the details and the v1 vs v2 numbers.
+
+## Building
+
+Ubuntu 24.04:
 
 ```bash
-rosdep update
-rosdep install --from-path src --ignore-src -r -y
-colcon build --symlink-install
-source install/setup.bash
+sudo apt install cmake ninja-build g++ libompl-dev libeigen3-dev libgtest-dev python3-dev python3-venv \
+    libboost-serialization-dev libboost-filesystem-dev libboost-system-dev
+tools/setup_venv.sh        # .venv with numpy, matplotlib, PyYAML, pytest
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DPython_EXECUTABLE=$PWD/.venv/bin/python
+cmake --build build
+ctest --test-dir build
+.venv/bin/python -m pytest python/tests
 ```
 
-## Running the Demo
+CMake fetches pybind11 (v2.13.6) itself. The Python module is built into
+`python/`, and `setup_venv.sh` puts that folder on the venv's path, so
+`import hybrid_astar` works in the venv after the build. `-DBUILD_PYTHON=OFF`
+skips it.
 
-Launch all three nodes with:
+## Command line
+
 ```bash
-ros2 launch hybrid_astar astar_viz_launch.py
+build/hybrid_astar_cli --scenario scenarios/S2.txt --out path.csv
+build/hybrid_astar_cli --scenario scenarios/S1.txt --set heuristic_weight=1 --trace trace.csv
+build/hybrid_astar_cli --help
 ```
-- `env_publisher.py` → publishes /map, /start, /goal
 
-- `hybrid_astar_node (C++)` → plans and publishes /planned_path
+A scenario is a PGM image (black = obstacle) plus a small text file with the
+resolution and the start and goal poses. Poses are the rear axle, headings
+in degrees. `tools/make_scenarios.py` writes the ones in `scenarios/`.
 
-- `path_viz.py` → animates the path on the map
+## Python
 
-## Demo
+```python
+import numpy as np
+import hybrid_astar as ha
+from hybrid_astar_viz import plot_result
 
-![Hybrid A* in action](results/pathviz.gif)
+grid = np.zeros((300, 400), dtype=np.int8)   # row 0 is the bottom, 0.1 m cells
+grid[:200, 195:205] = 100                     # a wall with a gap at the top
+cfg = ha.load_config("config/params.yaml")
+
+r = ha.plan(grid, (5.0, 5.0, 0.0), (35.0, 5.0, 0.0), cfg, resolution=0.1)
+print(r.success, r.stats.expansions, r.stats.search_ms)
+print(r.x[:3], r.direction[:3])               # numpy arrays; direction is +1 / -1
+
+plot_result(ha.GridMap(grid, 0.1), r, cfg, start=(5, 5, 0), goal=(35, 5, 0), out="plan.png")
+```
+
+`ha.plan(..., record_trace=True)` adds the search trace for
+`hybrid_astar_viz.animate_search`, and `on_progress=callback, every=N` calls
+back with new nodes during the search. `ha.Planner` keeps one map set up for
+many plans. `tools/demo.py S1` writes a picture and an animation for one
+scenario.
+
+## Results
+
+Release build on an i7-10870H, default parameters, commit `a4bc295`. S1-S4
+were planned 20 times each and S5 once on each of 50 random maps.
+
+| scenario | success | search ms median | search ms p95 | expansions | length m | direction switches |
+|---|---|---|---|---|---|---|
+| S1 demo map | 20/20 | 561 | 724 | 12439 | 87.0 | 1 |
+| S2 parallel parking | 20/20 | 206 | 233 | 3672 | 20.4 | 4 |
+| S3 dead end | 20/20 | 20 | 22 | 40 | 29.7 | 1 |
+| S4 maze | 20/20 | 260 | 317 | 6810 | 92.3 | 2 |
+| S5 random, 50 maps | 50/50 | 30 | 63 | 116 (median) | 33.0 (median) | 1 (median) |
+
+Against v1 on the same maps, v1 solves S1, S3, S4 and 39 of the 50 S5 maps,
+fails S2, and ends 0.35 to 0.47 m away from the goal. v2 solves all of them,
+ends on the goal pose, and its paths are shorter: S1 87.0 m against v1's
+94.0 m, S4 92.3 against 109.0 m. Shortcutting and smoothing together take
+3 to 26 ms, and the final paths stay under 1.05 times the full-steer
+curvature.
+
+Up to `fb06823` the S1 path was 104 m, longer than v1's. The steering costs
+were charged per 0.5 m primitive, which made turning almost twice as
+expensive as driving straight, and I had raised the heuristic weight to 5
+to make the search finish. Setting the steering costs to 0, the weight to 2
+and the closed-set cells to 0.5 m, and adding the shortcut pass, brought it
+to 87 m. The S1 search now takes 561 ms instead of 306 ms. RESULTS.md has
+each step.
+
+![S1 before and after](results/v2/S1_before_after.png)
+
+![parallel parking](results/v2/S2_search.gif)
+
+`heuristic_weight` (default 2) trades path cost for speed: 1 is plain A*,
+larger values expand fewer nodes but accept more expensive paths with more
+direction changes. w = 1 solves every scenario too, but S1 takes 6.6 s. The
+picture below is the same S5 map with w = 1 and w = 50.
+
+![w = 1 against w = 50](results/v2/weights_w1_vs_w50.png)
+
+More numbers, and the commands that produce them, are in
+[docs/RESULTS.md](docs/RESULTS.md). The pictures are in `results/v2/`.
+
+## Own code and libraries
+
+The search, heuristics, collision checks, distance transform, shortcut pass,
+smoother and plotting are written here. OMPL is used only for the Reeds-Shepp curves
+(`ompl::base::ReedsSheppStateSpace`, wrapped in `src/reeds_shepp.cpp`), and
+pybind11 only for the Python bindings.
+
+## Limitations
+
+- The search minimises cost, not length. Reversing costs 1.5 per metre and
+  each direction change 5, so the cheapest path is not always the shortest.
+  On S1 the w = 2 path is the shorter one (87 m, 83 m of it in reverse); w = 1
+  finds a cheaper one that turns round first (91.7 m).
+- Hybrid A* is not complete: the closed set keeps one pose per cell and
+  heading, and sometimes throws away the one a manoeuvre needs. S2 fails at
+  some weights and cell sizes, and the car + 1.0 m slot in
+  `scenarios/S2_tight` is not solved even though the car can drive out of
+  it. RESULTS.md has the details.
+- Shorter paths pass close to obstacles (S3: 0.11 m), and the smoother adds
+  very little clearance.
+- The 2D distance part of the heuristic runs Dijkstra over the full-resolution
+  grid for every goal, and the Reeds-Shepp length is computed for every new
+  node. On large maps these are a large part of the time.
+- Static maps only, one thread, a rectangular footprint, and no speed or
+  steering-rate limits.
+
+## Layout
+
+```
+include/hybrid_astar/   headers
+src/                    planner, collision, shortcut, smoother, Reeds-Shepp wrapper, CLI
+python/                 bindings, hybrid_astar_viz (plots, animation), tests
+tests/                  GoogleTest
+tools/                  scenario generator, benchmark, v1 comparison, media, demo
+scenarios/              S1-S5
+config/params.yaml      parameters
+results/v2/             pictures, animations and benchmark data
+results/pathviz.gif     the v1 animation
+```

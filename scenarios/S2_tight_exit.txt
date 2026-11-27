@@ -1,0 +1,6 @@
+# S2_tight driven out of the slot, to check whether the car fits
+map: S2_tight.pgm
+resolution: 0.1
+origin: 0.0 0.0
+start: 12.5 1.75 0
+goal: 22.75 5.5 0

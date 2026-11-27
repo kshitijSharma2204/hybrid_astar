@@ -1,0 +1,6 @@
+# S3: 6 m wide dead end, the car has to back out
+map: S3.pgm
+resolution: 0.1
+origin: 0.0 0.0
+start: 32.75 15 0
+goal: 9.25 15 180

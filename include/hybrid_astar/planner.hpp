@@ -1,76 +1,64 @@
 #pragma once
 
-#include "utils.hpp"
-#include <geometry_msgs/msg/pose_stamped.hpp>
+#include "hybrid_astar/collision.hpp"
+#include "hybrid_astar/reeds_shepp.hpp"
+#include "hybrid_astar/types.hpp"
+#include "hybrid_astar/utils.hpp"
+
+#include <functional>
 #include <memory>
-#include <nanoflann.hpp>
-#include <nav_msgs/msg/occupancy_grid.hpp>
-#include <nav_msgs/msg/path.hpp>
-#include <optional>
+#include <string>
 #include <vector>
 
 namespace hybrid_astar {
 
-using Point = std::array<double,2>;
-
-struct PointCloud {
-  std::vector<Point> points;
-  inline size_t kdtree_get_point_count() const { return points.size(); }
-  inline double kdtree_get_pt(const size_t idx, const size_t dim) const {
-    return points[idx][dim];
-  }
-  template <class BBOX> bool kdtree_get_bbox(BBOX&) const { return false; }
-};
-
-using KDTree = nanoflann::KDTreeSingleIndexAdaptor<
-    nanoflann::L2_Simple_Adaptor<double, PointCloud>,
-    PointCloud,
-    2,
-    size_t
->;
-
 class HybridAStarPlanner {
 public:
-  explicit HybridAStarPlanner(const VehicleModel& model,
-                              double yaw_resolution,
-                              int yaw_bins);
+  explicit HybridAStarPlanner(const PlannerConfig& config);
 
-  std::optional<nav_msgs::msg::Path> plan(
-    const geometry_msgs::msg::PoseStamped& start_msg,
-    const geometry_msgs::msg::PoseStamped& goal_msg,
-    const nav_msgs::msg::OccupancyGrid& map);
+  // Copies the map and builds the collision lookups for it. Call once per
+  // map; plan() can then run many times on it.
+  void setMap(const GridMap& map);
+  PlanResult plan(const Pose2D& start_pose,
+                  const Pose2D& goal_pose,
+                  const PlanOptions& options = {});
 
-  bool tryReedsSheppConnect(
-    const State& current,
-    const State& goal,
-    std::vector<State>& path_states) const;
+  // setMap() then plan(), for one-off calls.
+  PlanResult plan(const GridMap& map,
+                  const Pose2D& start_pose,
+                  const Pose2D& goal_pose,
+                  const PlanOptions& options = {});
+
+  double setupMs() const { return setup_ms_; }
+
+  void setLogger(std::function<void(const std::string&)> logger) {
+    logger_ = std::move(logger);
+  }
+  const PlannerConfig& config() const { return config_; }
 
 private:
-  // Cost weights to match Python version
-  static constexpr double kReverseCost      = 10.0;
-  static constexpr double kDirectionChange  = 150.0;
-  static constexpr double kSteerAngleCost   = 1.0;
-  static constexpr double kSteerAngleChange = 5.0;
-  static constexpr double kHybridWeight     = 50.0;
-
-  VehicleModel vehicle_model_;
+  PlannerConfig config_;
   std::vector<MotionPrimitive> motion_primitives_;
-  nav_msgs::msg::OccupancyGrid map_;
-  PointCloud obstacle_cloud_;
-  std::unique_ptr<KDTree> obstacle_tree_;
+  GridMap map_;
+  std::unique_ptr<CollisionChecker> checker_;
+  std::vector<Node> nodes_;
+  Pose2D goal_;
+  int n_substeps_ = 1;
+  double setup_ms_ = 0.0;
+  ReedsShepp rs_;
   std::vector<double> heuristic_;
   double yaw_resolution_;
-  int yaw_bins_;
+  std::function<void(const std::string&)> logger_;
 
-  void buildObstacleKDTree();
-  std::vector<State> generateNextStates(const State& current);
-  double computeHeuristic(const State &s) const;
-  void buildHeuristic(const State &goal);
-  
-  bool isInCollision(const State& s) const;
-  bool isVehicleInCollision(const State& s) const;
-  bool isPointInObstacle(double x, double y) const;
-  std::vector<std::pair<double,double>> getVehicleCorners(const State& s) const;
+  double heuristic2d(const Node &s) const;
+  double computeHeuristic(const Node &s) const;
+  void buildHeuristic(const Node &goal);
+  void buildPath(int goal_node, PlanResult& result) const;
+  bool tryReedsSheppConnect(int node, const Node& goal, PlanResult& result,
+                            SearchTrace* trace) const;
+
+  bool isInCollision(const Node& s) const;
+  void log(const std::string& msg) const;
 };
 
 } // namespace hybrid_astar

@@ -1,238 +1,284 @@
 #include "hybrid_astar/planner.hpp"
 
-#include "rclcpp/rclcpp.hpp"
-
-#include <ompl/base/ScopedState.h>
-#include <ompl/base/spaces/ReedsSheppStateSpace.h>
+#include "hybrid_astar/geometry.hpp"
+#include "hybrid_astar/shortcut.hpp"
+#include "hybrid_astar/smoother.hpp"
 
 #include <algorithm>
+#include <chrono>
+#include <cstdio>
 #include <limits>
 #include <queue>
-#include <unordered_set>
 
 namespace hybrid_astar {
 
-HybridAStarPlanner::HybridAStarPlanner(
-    const VehicleModel& model,
-    double yaw_resolution,
-    int yaw_bins)
-  : vehicle_model_{model},
-    yaw_resolution_{yaw_resolution},
-    yaw_bins_{yaw_bins}
+HybridAStarPlanner::HybridAStarPlanner(const PlannerConfig& config)
+  : config_{config},
+    rs_{config.minTurningRadius()},
+    yaw_resolution_{2*M_PI / config.heading_bins}
 {
-  motion_primitives_ = generateMotionPrimitives(vehicle_model_);
+  motion_primitives_ = generateMotionPrimitives(config_);
+  n_substeps_ = std::max(1, int(std::ceil(
+    config_.step_size / config_.collision_step - 1e-9)));
 }
 
-std::optional<nav_msgs::msg::Path> HybridAStarPlanner::plan(
-    const geometry_msgs::msg::PoseStamped& start_msg,
-    const geometry_msgs::msg::PoseStamped& goal_msg,
-    const nav_msgs::msg::OccupancyGrid& map)
-{
-  auto logger = rclcpp::get_logger("HybridAStarPlanner");
+void HybridAStarPlanner::setMap(const GridMap& map) {
+  auto t0 = std::chrono::steady_clock::now();
   map_ = map;
-  buildObstacleKDTree();
+  checker_ = std::make_unique<CollisionChecker>(map_, config_);
+  setup_ms_ = std::chrono::duration<double, std::milli>(
+    std::chrono::steady_clock::now() - t0).count();
+}
 
-  // Build start state
-  State start;
-  start.x = start_msg.pose.position.x;
-  start.y = start_msg.pose.position.y;
-  {
-    auto &q = start_msg.pose.orientation;
-    start.theta = std::atan2(
-      2.0*(q.w*q.z + q.x*q.y),
-      1.0 - 2.0*(q.y*q.y + q.z*q.z)
-    );
+PlanResult HybridAStarPlanner::plan(
+    const GridMap& map,
+    const Pose2D& start_pose,
+    const Pose2D& goal_pose,
+    const PlanOptions& options)
+{
+  setMap(map);
+  return plan(start_pose, goal_pose, options);
+}
+
+PlanResult HybridAStarPlanner::plan(
+    const Pose2D& start_pose,
+    const Pose2D& goal_pose,
+    const PlanOptions& options)
+{
+  PlanResult result;
+  if (!checker_) {
+    result.message = "no map, call setMap() first";
+    return result;
   }
-  start.g = 0.0; start.h = 0.0;
-  start.parent = nullptr;
-  start.is_reverse = false;
-  start.steering_angle = 0.0;
+  auto t_start = std::chrono::steady_clock::now();
+  auto elapsedMs = [&]() {
+    return std::chrono::duration<double, std::milli>(
+      std::chrono::steady_clock::now() - t_start).count();
+  };
+  if (options.record_trace) result.trace.emplace();
+  SearchTrace* trace = result.trace ? &*result.trace : nullptr;
+  nodes_.clear();
 
-  // Build goal state
-  State goal;
-  goal.x = goal_msg.pose.position.x;
-  goal.y = goal_msg.pose.position.y;
-  {
-    auto &q = goal_msg.pose.orientation;
-    goal.theta = std::atan2(
-      2.0*(q.w*q.z + q.x*q.y),
-      1.0 - 2.0*(q.y*q.y + q.z*q.z)
-    );
-  }
+  Node start;
+  start.x = start_pose.x;
+  start.y = start_pose.y;
+  start.theta = wrapAngle(start_pose.theta);
 
-  // Build grid‐based Dijkstra heuristic
+  Node goal;
+  goal.x = goal_pose.x;
+  goal.y = goal_pose.y;
+  goal.theta = wrapAngle(goal_pose.theta);
+
+  goal_ = {goal.x, goal.y, goal.theta};
   buildHeuristic(goal);
 
-  // Sanity checks
   if (isInCollision(start)) {
-    RCLCPP_ERROR(logger,"Start in obstacle — abort");
-    return std::nullopt;
+    result.message = "start pose is in collision";
+    log(result.message);
+    return result;
   }
   if (isInCollision(goal)) {
-    RCLCPP_ERROR(logger,"Goal in obstacle — abort");
-    return std::nullopt;
+    result.message = "goal pose is in collision";
+    log(result.message);
+    return result;
   }
 
-  RCLCPP_INFO(logger,
-    "plan(): from (%.2f,%.2f,%.2f) to (%.2f,%.2f,%.2f)",
-    start.x, start.y, start.theta,
-    goal.x,  goal.y,  goal.theta);
+  {
+    char buf[128];
+    std::snprintf(buf, sizeof(buf),
+      "plan(): from (%.2f,%.2f,%.2f) to (%.2f,%.2f,%.2f)",
+      start.x, start.y, start.theta,
+      goal.x,  goal.y,  goal.theta);
+    log(buf);
+  }
 
-  // Open set: min‐heap by f = g + h
-  auto cmp = [](auto &a, auto &b){
-    return (a->g + a->h) > (b->g + b->h);
-  };
-  std::priority_queue<
-    std::shared_ptr<State>,
-    std::vector<std::shared_ptr<State>>,
-    decltype(cmp)
-  > open_set(cmp);
-
-  // Discretizer
-  auto packKey = [&](int ix,int iy,int iyaw){
-    return (uint64_t(ix)<<40) | (uint64_t(iy)<<20) | uint64_t(iyaw);
-  };
-  auto discretize = [&](const State &s){
-    double res = map_.info.resolution;
-    double ox  = map_.info.origin.position.x;
-    double oy  = map_.info.origin.position.y;
-    int W      = map_.info.width;
-
-    int ix = int(std::round((s.x - ox)/res));
-    int iy = int(std::round((s.y - oy)/res));
-    double th = std::fmod(s.theta, 2*M_PI);
+  // The closed set is a flat array over (x cell, y cell, heading bin). It
+  // has its own cell size, so it gets its own grid header and goes through
+  // the same world -> cell conversion as everything else.
+  GridMap closed_grid;
+  closed_grid.resolution = config_.xy_resolution;
+  closed_grid.origin_x = map_.origin_x;
+  closed_grid.origin_y = map_.origin_y;
+  closed_grid.width = int(std::ceil(map_.width * map_.resolution / config_.xy_resolution));
+  closed_grid.height = int(std::ceil(map_.height * map_.resolution / config_.xy_resolution));
+  std::vector<uint8_t> closed(
+    size_t(closed_grid.width) * closed_grid.height * config_.heading_bins, 0);
+  auto closedIndex = [&](const Node &s) {
+    int ix = std::clamp(worldToCellX(closed_grid, s.x), 0, closed_grid.width-1);
+    int iy = std::clamp(worldToCellY(closed_grid, s.y), 0, closed_grid.height-1);
+    double th = s.theta;   // already in (-pi, pi]
     if (th < 0) th += 2*M_PI;
-    int iyaw = int(std::floor(th/yaw_resolution_)) % yaw_bins_;
-
-    ix = std::clamp(ix, 0, W-1);
-    iy = std::clamp(iy, 0, int(map_.info.height)-1);
-    return packKey(ix, iy, iyaw);
+    int iyaw = int(std::floor(th/yaw_resolution_)) % config_.heading_bins;
+    return (size_t(iy) * closed_grid.width + ix) * config_.heading_bins + iyaw;
   };
 
-  // push start
-  open_set.push(std::make_shared<State>(start));
-  std::unordered_set<uint64_t> closed_set;
+  // Open set: min-heap on f = g + h. Ties go to the older node so runs are
+  // repeatable.
+  using Entry = std::pair<double, int>;
+  std::priority_queue<Entry, std::vector<Entry>, std::greater<Entry>> open_set;
+  start.h = computeHeuristic(start);
+  nodes_.push_back(start);
+  open_set.push({start.g + start.h, 0});
 
-  // fallback tolerances
-  constexpr double pos_tol   = 0.5;
-  constexpr double theta_tol = 0.3;
-
-  // main A* loop
   while (!open_set.empty()) {
-    auto current = open_set.top(); open_set.pop();
+    if (result.stats.expansions >= config_.max_expansions) {
+      result.stats.search_ms = elapsedMs();
+      result.message = "gave up after max_expansions";
+      log("plan(): " + result.message);
+      return result;
+    }
+    int cur = open_set.top().second;
+    open_set.pop();
 
-    uint64_t key = discretize(*current);
-    if (closed_set.count(key)) continue;
-    closed_set.insert(key);
-
-    // 2) fallback: goal‐proximity
-    double dx    = current->x - goal.x;
-    double dy    = current->y - goal.y;
-    double dpos  = std::hypot(dx, dy);
-    double dtheta= std::fabs(current->theta - goal.theta);
-    if (dpos < pos_tol && dtheta < theta_tol) {
-      nav_msgs::msg::Path path_msg;
-      path_msg.header.frame_id = map_.header.frame_id;
-      path_msg.header.stamp    = map_.header.stamp;
-
-      // prepend start
-      {
-        auto p = start_msg;
-        p.header = path_msg.header;
-        path_msg.poses.push_back(p);
+    size_t key = closedIndex(nodes_[cur]);
+    if (closed[key]) continue;
+    closed[key] = 1;
+    ++result.stats.expansions;
+    if (trace) {
+      Node& n = nodes_[cur];
+      n.trace_id = int(trace->nodes.size());
+      trace->nodes.push_back({n.x, n.y, n.theta,
+                              n.parent >= 0 ? nodes_[n.parent].trace_id : -1});
+      if (options.on_progress &&
+          result.stats.expansions % std::max(1, options.progress_every) == 0) {
+        options.on_progress(*trace);
       }
-      // backtrack
-      std::vector<geometry_msgs::msg::PoseStamped> tail;
-      for (auto s = current; s!=nullptr; s=s->parent) {
-        geometry_msgs::msg::PoseStamped ps;
-        ps.header = path_msg.header;
-        ps.pose.position.x = s->x;
-        ps.pose.position.y = s->y;
-        ps.pose.orientation.w = std::cos(s->theta/2.0);
-        ps.pose.orientation.z = std::sin(s->theta/2.0);
-        tail.push_back(ps);
-      }
-      std::reverse(tail.begin(), tail.end());
-      path_msg.poses.insert(
-        path_msg.poses.end(),
-        tail.begin(), tail.end()
-      );
-      RCLCPP_INFO(logger,
-        "plan(): success → %zu poses",
-        path_msg.poses.size());
-      return path_msg;
     }
 
-    // 3) expand non‐holonomic primitives (with full cost + sub‐step collision)
-    for (auto &prim : motion_primitives_) {
-      // simulate in 5 sub‐steps
-      const int n_steps = 5;
-      bool   bad       = false;
-      State  last = *current;
+    const Node current = nodes_[cur];
+    bool done = false;
+    if (config_.analytic_expansion_interval > 0) {
+      // Shoot a Reeds-Shepp curve at the goal every N expansions, and on
+      // every expansion once we are close (by the 2D distance-to-goal map).
+      bool close = heuristic2d(current) < config_.analytic_expansion_distance;
+      if (close ||
+          result.stats.expansions % config_.analytic_expansion_interval == 0) {
+        done = tryReedsSheppConnect(cur, goal, result, trace);
+      }
+    } else {
+      double dpos   = std::hypot(current.x - goal.x, current.y - goal.y);
+      double dtheta = std::fabs(angleDiff(current.theta, goal.theta));
+      if (dpos < config_.goal_pos_tol && dtheta < config_.goal_heading_tol) {
+        buildPath(cur, result);
+        done = true;
+      }
+    }
+    if (done) {
+      result.stats.success = true;
+      result.stats.search_ms = elapsedMs();
+      result.raw_poses = result.poses;
+      result.raw_direction = result.direction;
+      if (config_.shortcut_enabled) {
+        auto t_cut = std::chrono::steady_clock::now();
+        ShortcutResult sc = shortcutPath(result.poses, result.direction, rs_, *checker_, config_);
+        result.poses = std::move(sc.poses);
+        result.direction = std::move(sc.direction);
+        result.stats.shortcuts = sc.shortcuts;
+        result.stats.shortcut_ms = std::chrono::duration<double, std::milli>(
+          std::chrono::steady_clock::now() - t_cut).count();
+        log("shortcut: " + std::to_string(sc.shortcuts) + " Reeds-Shepp curves put in");
+      }
+      if (config_.smooth_enabled) {
+        auto t_smooth = std::chrono::steady_clock::now();
+        SmoothResult sm = smoothPath(result.poses, result.direction, *checker_, config_);
+        result.poses = std::move(sm.poses);
+        result.direction = std::move(sm.direction);
+        result.stats.smooth_segments = sm.segments;
+        result.stats.smooth_fallbacks = sm.collision_fallbacks + sm.curvature_fallbacks;
+        result.stats.smooth_ms = std::chrono::duration<double, std::milli>(
+          std::chrono::steady_clock::now() - t_smooth).count();
+        log("smoothing: " + std::to_string(sm.segments) + " segments, " +
+            std::to_string(sm.collision_fallbacks) + " put back for collisions, " +
+            std::to_string(sm.curvature_fallbacks) + " for curvature");
+      }
+      result.message = "found a path with " +
+                       std::to_string(result.poses.size()) + " poses";
+      log("plan(): " + result.message);
+      return result;
+    }
 
-      for (int i=1; i<=n_steps; ++i) {
-        double frac = double(i)/double(n_steps);
-        double dir  = prim.is_reverse ? -1.0 : 1.0;
-        double l    = vehicle_model_.step_size * dir;
-        double beta = (l / vehicle_model_.wheel_base)
-                    * std::tan(prim.steering_angle);
-        double dxp = frac*l * std::cos(current->theta + beta*frac*0.5);
-        double dyp = frac*l * std::sin(current->theta + beta*frac*0.5);
-        double th  = current->theta + beta*frac;
-
-        State temp;
-        temp.x             = current->x + dxp;
-        temp.y             = current->y + dyp;
-        temp.theta         = th;
-        temp.is_reverse    = prim.is_reverse;
-        temp.steering_angle= prim.steering_angle;
-
-        if (isInCollision(temp)) {
+    for (int k = 0; k < int(motion_primitives_.size()); ++k) {
+      const auto& prim = motion_primitives_[k];
+      double l = config_.step_size * (prim.is_reverse ? -1.0 : 1.0);
+      bool bad = false;
+      Pose2D last;
+      for (int i = 1; i <= n_substeps_; ++i) {
+        last = primitivePose({current.x, current.y, current.theta},
+                             prim.steering_angle, l * i / n_substeps_,
+                             config_.wheel_base);
+        if (checker_->inCollision(last)) {
           bad = true;
           break;
         }
-        last = temp;
       }
       if (bad) continue;
 
-      // compute full cost
-      double move = std::hypot(last.x-current->x,
-                               last.y-current->y);
-      double g = current->g
-               + move * (prim.is_reverse
-                   ? kReverseCost : 1.0)
-               + (prim.is_reverse != current->is_reverse
-                   ? kDirectionChange : 0.0)
-               + std::abs(prim.steering_angle
-                   - current->steering_angle)
-                   * kSteerAngleChange
-               + std::abs(prim.steering_angle)
-                   * kSteerAngleCost;
-
-      // push successor
-      auto succ = std::make_shared<State>(last);
-      succ->g              = g;
-      succ->h              = computeHeuristic(*succ);
-      succ->parent         = current;
-      open_set.push(succ);
+      Node succ;
+      succ.x = last.x;
+      succ.y = last.y;
+      succ.theta = last.theta;
+      succ.is_reverse = prim.is_reverse;
+      succ.steering_angle = prim.steering_angle;
+      succ.parent = cur;
+      succ.primitive = k;
+      succ.g = current.g
+             + config_.step_size * (prim.is_reverse
+                 ? config_.reverse_penalty : 1.0)
+             // the start has no direction yet, so its first move is free
+             + (cur != 0 && prim.is_reverse != current.is_reverse
+                 ? config_.direction_change_cost : 0.0)
+             + std::abs(prim.steering_angle - current.steering_angle)
+                 * config_.steer_change_cost
+             + std::abs(prim.steering_angle) * config_.steer_cost;
+      if (closed[closedIndex(succ)]) continue;
+      succ.h = computeHeuristic(succ);
+      nodes_.push_back(succ);
+      open_set.push({succ.g + succ.h, int(nodes_.size()) - 1});
     }
   }
 
-  RCLCPP_WARN(logger, "plan(): failed");
-  return std::nullopt;
+  result.stats.search_ms = elapsedMs();
+  result.message = "open set exhausted, no path";
+  log("plan(): " + result.message);
+  return result;
 }
 
-void HybridAStarPlanner::buildHeuristic(const State &goal) {
-  auto &info = map_.info;
-  int W = info.width, H = info.height;
-  double res = info.resolution;
+// Walks back from the goal node and re-runs each primitive, so the path
+// has a pose every collision_step meters, each tagged with its direction.
+void HybridAStarPlanner::buildPath(int goal_node, PlanResult& result) const {
+  std::vector<int> chain;
+  for (int i = goal_node; i >= 0; i = nodes_[i].parent) chain.push_back(i);
+  std::reverse(chain.begin(), chain.end());
+
+  const Node& s = nodes_[chain[0]];
+  result.poses.push_back({s.x, s.y, s.theta});
+  result.direction.push_back(1);
+  for (size_t c = 1; c < chain.size(); ++c) {
+    const Node& from = nodes_[chain[c-1]];
+    const Node& to = nodes_[chain[c]];
+    const auto& prim = motion_primitives_[to.primitive];
+    double l = config_.step_size * (prim.is_reverse ? -1.0 : 1.0);
+    int dir = prim.is_reverse ? -1 : 1;
+    for (int i = 1; i <= n_substeps_; ++i) {
+      result.poses.push_back(primitivePose({from.x, from.y, from.theta},
+                                           prim.steering_angle,
+                                           l * i / n_substeps_,
+                                           config_.wheel_base));
+      result.direction.push_back(dir);
+    }
+  }
+  // The start pose drives off in the direction of the first motion.
+  if (result.direction.size() > 1) result.direction[0] = result.direction[1];
+}
+
+void HybridAStarPlanner::buildHeuristic(const Node &goal) {
+  int W = map_.width, H = map_.height;
+  double res = map_.resolution;
   heuristic_.assign(W*H, std::numeric_limits<double>::infinity());
 
   auto idx=[&](int x,int y){ return y*W + x; };
-  int gx = std::clamp(int((goal.x-info.origin.position.x)/res),
-                      0, W-1);
-  int gy = std::clamp(int((goal.y-info.origin.position.y)/res),
-                      0, H-1);
+  int gx = std::clamp(worldToCellX(map_, goal.x), 0, W-1);
+  int gy = std::clamp(worldToCellY(map_, goal.y), 0, H-1);
 
   using P = std::pair<double,int>;
   std::priority_queue<P,std::vector<P>,std::greater<P>> pq;
@@ -260,91 +306,60 @@ void HybridAStarPlanner::buildHeuristic(const State &goal) {
   }
 }
 
-double HybridAStarPlanner::computeHeuristic(const State &s) const {
-  auto &info = map_.info;
-  double res = info.resolution;
-  int gx = std::clamp(int((s.x-info.origin.position.x)/res),
-                      0, int(info.width)-1);
-  int gy = std::clamp(int((s.y-info.origin.position.y)/res),
-                      0, int(info.height)-1);
-  return kHybridWeight * heuristic_[gy * info.width + gx];
+double HybridAStarPlanner::heuristic2d(const Node &s) const {
+  int gx = std::clamp(worldToCellX(map_, s.x), 0, map_.width-1);
+  int gy = std::clamp(worldToCellY(map_, s.y), 0, map_.height-1);
+  return heuristic_[gy * map_.width + gx];
 }
 
-bool HybridAStarPlanner::isPointInObstacle(double x, double y) const {
-  auto &info = map_.info;
-  double res = info.resolution;
-  int ix = int(std::floor((x - info.origin.position.x)/res));
-  int iy = int(std::floor((y - info.origin.position.y)/res));
-  if(ix<0||iy<0||ix>=int(info.width)||iy>=int(info.height)) return true;
-  return map_.data[iy*info.width + ix] >= 100;
-}
-
-std::vector<std::pair<double,double>>
-HybridAStarPlanner::getVehicleCorners(const State &s) const {
-  double L = vehicle_model_.length, W = vehicle_model_.width;
-  double c = std::cos(s.theta), s_ = std::sin(s.theta);
-  std::vector<std::pair<double,double>> lc = {
-    { L/2,  W/2}, { L/2, -W/2},
-    {-L/2, -W/2}, {-L/2,  W/2}
-  }, out;
-  for (auto &p : lc) {
-    out.push_back({
-      s.x + p.first*c - p.second*s_,
-      s.y + p.first*s_ + p.second*c
-    });
+// Two lower bounds on the remaining path length; I take the larger. The
+// 2D one knows the obstacles but not the turning radius, the Reeds-Shepp
+// one knows the turning radius but not the obstacles.
+double HybridAStarPlanner::computeHeuristic(const Node &s) const {
+  double h = heuristic2d(s);
+  if (config_.rs_heuristic) {
+    h = std::max(h, rs_.length({s.x, s.y, s.theta}, goal_));
   }
-  return out;
+  return config_.heuristic_weight * h;
 }
 
-bool HybridAStarPlanner::isVehicleInCollision(const State &s) const {
-  for (auto &p : getVehicleCorners(s)) {
-    if (isPointInObstacle(p.first, p.second)) return true;
-  }
-  double L = vehicle_model_.length, W = vehicle_model_.width;
-  double c = std::cos(s.theta), s_ = std::sin(s.theta);
-  for (double v=-W/2; v<=W/2; v+=0.2) {
-    if (isPointInObstacle(
-          s.x + (L/2)*c - v*s_,
-          s.y + (L/2)*s_ + v*c)) return true;
-    if (isPointInObstacle(
-          s.x +(-L/2)*c - v*s_,
-          s.y +(-L/2)*s_ + v*c)) return true;
-  }
-  for (double u=-L/2; u<=L/2; u+=0.2) {
-    if (isPointInObstacle(
-          s.x + u*c - (W/2)*s_,
-          s.y + u*s_ + (W/2)*c)) return true;
-    if (isPointInObstacle(
-          s.x + u*c -(-W/2)*s_,
-          s.y + u*s_ +(-W/2)*c)) return true;
-  }
-  return false;
-}
+// Samples the shortest Reeds-Shepp curve from the node to the goal and
+// checks every sample with the full footprint. On success the curve is
+// appended to the search path and the result is complete.
+bool HybridAStarPlanner::tryReedsSheppConnect(int node, const Node& goal,
+                                              PlanResult& result,
+                                              SearchTrace* trace) const {
+  const Node& n = nodes_[node];
+  std::vector<Pose2D> poses;
+  std::vector<int> dirs;
+  rs_.sample({n.x, n.y, n.theta}, {goal.x, goal.y, goal.theta},
+             config_.rs_sample_step, poses, dirs);
 
-bool HybridAStarPlanner::isInCollision(const State &s) const {
-  return isVehicleInCollision(s);
-}
-
-void HybridAStarPlanner::buildObstacleKDTree() {
-  auto &info = map_.info;
-  double res = info.resolution;
-  obstacle_cloud_.points.clear();  
-  for(int y=0;y<int(info.height);++y){
-    for(int x=0;x<int(info.width);++x){
-      int idx = y*info.width + x;
-      if(map_.data[idx]>=100){
-        obstacle_cloud_.points.push_back({
-          info.origin.position.x + x*res,
-          info.origin.position.y + y*res
-        });
-      }
+  bool collided = false;
+  for (const auto& p : poses) {
+    if (checker_->inCollision(p)) {
+      collided = true;
+      break;
     }
   }
-  obstacle_tree_.reset(new KDTree(
-    2, obstacle_cloud_,
-    nanoflann::KDTreeSingleIndexAdaptorParams(10)
-  ));
-  obstacle_tree_->buildIndex();
+  if (trace) trace->rs_attempts.push_back({n.trace_id, collided, poses});
+  if (collided) return false;
+
+  buildPath(node, result);
+  result.poses.insert(result.poses.end(), poses.begin(), poses.end());
+  result.direction.insert(result.direction.end(), dirs.begin(), dirs.end());
+  if (result.direction.size() > 1 && result.poses.size() == poses.size() + 1) {
+    result.direction[0] = result.direction[1];   // path is only the curve
+  }
+  return true;
+}
+
+bool HybridAStarPlanner::isInCollision(const Node &s) const {
+  return checker_->inCollision({s.x, s.y, s.theta});
+}
+
+void HybridAStarPlanner::log(const std::string& msg) const {
+  if (logger_) logger_(msg);
 }
 
 } // namespace hybrid_astar

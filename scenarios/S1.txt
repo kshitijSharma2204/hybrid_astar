@@ -1,0 +1,6 @@
+# S1: demo map from the old env_publisher.py
+map: S1.pgm
+resolution: 0.1
+origin: 0.0 0.0
+start: 35 55 0
+goal: 50 17 180
