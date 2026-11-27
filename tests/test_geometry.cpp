@@ -58,13 +58,20 @@ TEST(Primitive, FullSteerFollowsMinTurningCircle) {
       // Centre of the turning circle is R to the left (or right) of the car.
       double cx = start.x - side * R * std::sin(start.theta);
       double cy = start.y + side * R * std::cos(start.theta);
-      // One 1 m primitive, checked at the 0.2 m sub-steps the planner uses.
-      // The v1 update is not an exact arc, hence the 1 mm tolerance.
-      for (int i = 1; i <= 5; ++i) {
-        Pose2D p = primitivePose(start, steer, dir * 0.2 * i, cfg.wheel_base);
-        EXPECT_NEAR(std::hypot(p.x - cx, p.y - cy), R, 1e-3) << "step " << i;
-        EXPECT_NEAR(p.theta - start.theta, side * dir * 0.2 * i / R, 1e-12);
+      // 30 chained 1 m primitives, checked at the 0.2 m sub-steps the
+      // planner uses. That is more than a full circle.
+      Pose2D from = start;
+      for (int k = 0; k < 30; ++k) {
+        for (int i = 1; i <= 5; ++i) {
+          Pose2D p = primitivePose(from, steer, dir * 0.2 * i, cfg.wheel_base);
+          EXPECT_NEAR(std::hypot(p.x - cx, p.y - cy), R, 1e-9) << k << " " << i;
+          EXPECT_GT(p.theta, -M_PI);
+          EXPECT_LE(p.theta, M_PI);
+        }
+        from = primitivePose(from, steer, dir * 1.0, cfg.wheel_base);
       }
+      double turned = side * dir * 30.0 / R;
+      EXPECT_NEAR(angleDiff(from.theta, start.theta + turned), 0.0, 1e-9);
     }
   }
 }

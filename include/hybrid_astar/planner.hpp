@@ -49,6 +49,8 @@ private:
   std::vector<MotionPrimitive> motion_primitives_;
   GridMap map_;
   std::unique_ptr<CollisionChecker> checker_;
+  std::vector<Node> nodes_;
+  int n_substeps_ = 1;
   PointCloud obstacle_cloud_;
   std::unique_ptr<KDTree> obstacle_tree_;
   std::vector<double> heuristic_;
@@ -56,10 +58,11 @@ private:
   std::function<void(const std::string&)> logger_;
 
   void buildObstacleKDTree();
-  double computeHeuristic(const State &s) const;
-  void buildHeuristic(const State &goal);
-  
-  bool isInCollision(const State& s) const;
+  double computeHeuristic(const Node &s) const;
+  void buildHeuristic(const Node &goal);
+  void buildPath(int goal_node, PlanResult& result) const;
+
+  bool isInCollision(const Node& s) const;
   void log(const std::string& msg) const;
 };
 

@@ -4,21 +4,19 @@
 #include "hybrid_astar/types.hpp"
 
 #include <cmath>
-#include <memory>
 #include <vector>
 
 namespace hybrid_astar {
 
-struct State {
-  double x    = 0.0;       // position
-  double y    = 0.0;       // position
-  double theta= 0.0;       // orientation
-  double g    = 0.0;       // cost-to-come
-  double h    = 0.0;       // heuristic cost-to-go
-
-  std::shared_ptr<State> parent = nullptr;  
-                          // for backtracking
-
+// One search node. Nodes live in a vector and point to their parent by index.
+struct Node {
+  double x     = 0.0;
+  double y     = 0.0;
+  double theta = 0.0;
+  double g     = 0.0;        // cost-to-come
+  double h     = 0.0;        // weighted cost-to-go estimate
+  int    parent    = -1;     // index of the parent node, -1 for the start
+  int    primitive = -1;     // motion primitive that led here
   bool   is_reverse     = false;  // did we arrive here in reverse?
   double steering_angle = 0.0;    // what steer angle got us here
   int    trace_id       = -1;     // index in SearchTrace::nodes once expanded
@@ -45,14 +43,20 @@ generateMotionPrimitives(const PlannerConfig& cfg) {
 }
 
 // Pose after driving a signed distance l (negative = reverse) at a fixed
-// steering angle. Uses the v1 update: move l along the mean heading. The
-// heading comes back wrapped to (-pi, pi].
+// steering angle, along an exact arc of curvature tan(steer) / wheel_base.
+// The heading comes back wrapped to (-pi, pi].
 inline Pose2D primitivePose(const Pose2D& from, double steer, double l,
                             double wheel_base) {
-  double beta = (l / wheel_base) * std::tan(steer);
-  return {from.x + l * std::cos(from.theta + beta * 0.5),
-          from.y + l * std::sin(from.theta + beta * 0.5),
-          wrapAngle(from.theta + beta)};
+  double kappa = std::tan(steer) / wheel_base;
+  double th1 = from.theta + l * kappa;
+  if (std::fabs(kappa) < 1e-12) {
+    return {from.x + l * std::cos(from.theta),
+            from.y + l * std::sin(from.theta),
+            wrapAngle(from.theta)};
+  }
+  return {from.x + (std::sin(th1) - std::sin(from.theta)) / kappa,
+          from.y - (std::cos(th1) - std::cos(from.theta)) / kappa,
+          wrapAngle(th1)};
 }
 
 } // namespace hybrid_astar

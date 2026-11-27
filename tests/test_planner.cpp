@@ -5,45 +5,47 @@
 
 #include <gtest/gtest.h>
 
-#include <fstream>
-#include <sstream>
 
 using namespace hybrid_astar;
 
+
 namespace {
 
-std::vector<Pose2D> readCsv(const std::string& file) {
-  std::ifstream in(file);
-  std::vector<Pose2D> out;
-  std::string line;
-  while (std::getline(in, line)) {
-    if (line.empty() || line[0] == '#' || line[0] == 'x') continue;
-    std::stringstream ss(line);
-    Pose2D p;
-    char comma;
-    ss >> p.x >> comma >> p.y >> comma >> p.theta;
-    out.push_back(p);
+// Checks a path pose by pose: consecutive poses at most collision_step
+// apart, no collisions, headings wrapped, direction set on every pose.
+void expectValidPath(const PlanResult& r, const GridMap& grid,
+                     const PlannerConfig& cfg) {
+  ASSERT_EQ(r.poses.size(), r.direction.size());
+  CollisionChecker cc(grid, cfg);
+  for (size_t i = 0; i < r.poses.size(); ++i) {
+    const auto& p = r.poses[i];
+    EXPECT_FALSE(cc.inCollision(p)) << "pose " << i;
+    EXPECT_GT(p.theta, -M_PI);
+    EXPECT_LE(p.theta, M_PI);
+    EXPECT_TRUE(r.direction[i] == 1 || r.direction[i] == -1);
+    if (i > 0) {
+      double d = std::hypot(p.x - r.poses[i-1].x, p.y - r.poses[i-1].y);
+      EXPECT_LE(d, cfg.collision_step + 1e-9) << "pose " << i;
+      EXPECT_GT(d, 1e-6) << "pose " << i << " repeats the one before";
+    }
   }
-  return out;
 }
 
 } // namespace
 
-TEST(Planner, S1MatchesV1Baseline) {
+TEST(Planner, S1PathIsValid) {
   const std::string root = HA_SOURCE_DIR;
   Scenario sc = loadScenario(root + "/scenarios/S1.txt");
-  HybridAStarPlanner planner(loadConfig(root + "/config/params.yaml"));
+  PlannerConfig cfg = loadConfig(root + "/config/params.yaml");
+  HybridAStarPlanner planner(cfg);
   PlanResult r = planner.plan(sc.grid, sc.start, sc.goal);
   ASSERT_TRUE(r.stats.success) << r.message;
-
-  auto baseline = readCsv(root + "/results/v2/baseline_v1_S1.csv");
-  ASSERT_EQ(r.poses.size(), baseline.size());
-  for (size_t i = 0; i < baseline.size(); ++i) {
-    EXPECT_NEAR(r.poses[i].x, baseline[i].x, 1e-5) << i;
-    EXPECT_NEAR(r.poses[i].y, baseline[i].y, 1e-5) << i;
-    // v1 never wrapped headings, so compare them modulo 2 pi
-    EXPECT_NEAR(angleDiff(r.poses[i].theta, baseline[i].theta), 0.0, 1e-5) << i;
-  }
+  expectValidPath(r, sc.grid, cfg);
+  EXPECT_DOUBLE_EQ(r.poses.front().x, sc.start.x);
+  EXPECT_DOUBLE_EQ(r.poses.front().y, sc.start.y);
+  EXPECT_LT(std::hypot(r.poses.back().x - sc.goal.x, r.poses.back().y - sc.goal.y),
+            cfg.goal_pos_tol);
+  EXPECT_LT(std::fabs(angleDiff(r.poses.back().theta, sc.goal.theta)), cfg.goal_heading_tol);
 }
 
 TEST(Planner, GoalCheckWrapsHeading) {
