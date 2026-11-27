@@ -5,8 +5,9 @@
     tools/make_media.py --no-gif   # PNGs only
 
 PNGs for S1-S4 and S2_tight, one overview PNG of all S5 seeds, search
-animations for S1 and S2, and a comparison of heuristic weight 1 and 50 on
-S5 seed 36 (as a PNG and two GIFs).
+animations for S1 and S2, a comparison of heuristic weight 1 and 50 on
+S5 seed 36 (as a PNG and two GIFs), and S1 with the search settings before
+and after commit 78ae297.
 """
 
 import argparse
@@ -114,6 +115,37 @@ def weight_comparison(gif):
     plt.close(fig)
 
 
+# The search settings up to fb06823. 78ae297 changed these four and added
+# the shortcut pass.
+OLD_SEARCH = dict(heuristic_weight=5, xy_resolution=0.2, steer_cost=1, steer_change_cost=5,
+                  shortcut_enabled=0)
+
+
+def s1_before_after():
+    sc = scenario("S1")
+    fig, axes = plt.subplots(1, 2, figsize=(14, 8))
+    panels = (("before: w = 5, 0.2 m cells, steering costs 1 and 5", OLD_SEARCH),
+              ("now: w = 2, 0.5 m cells, no steering costs, shortcut", {}))
+    for ax, (label, over) in zip(axes, panels):
+        cfg = config(**over)
+        r = ha.plan(sc.grid, sc.start, sc.goal, cfg, record_trace=True)
+        draw_map(ax, sc.grid)
+        ax.add_collection(LineCollection(_tree_segments(r.trace.nodes), colors=TREE,
+                                         linewidths=0.5, zorder=2))
+        draw_car(ax, *sc.start, cfg, color="#2a9d3c", lw=1.5)
+        draw_car(ax, *sc.goal, cfg, color="#c2185b", lw=1.5)
+        draw_path(ax, r.x, r.y, r.direction, lw=2.0)
+        length = float(np.sum(np.hypot(np.diff(r.x), np.diff(r.y))))
+        ax.set_title("%s\n%d expansions, %.1f m" % (label, r.stats.expansions, length),
+                     fontsize=10)
+        ax.set_xlim(10, 70)
+        ax.set_ylim(0, 75)
+        print("S1 %s: %d expansions, %.1f m" % (label.split(":")[0], r.stats.expansions, length))
+    fig.tight_layout()
+    fig.savefig(os.path.join(OUT, "S1_before_after.png"), dpi=80)
+    plt.close(fig)
+
+
 def search_gifs():
     for name in ("S1", "S2"):
         sc, cfg = scenario(name), config()
@@ -133,6 +165,7 @@ def main():
     single_pngs()
     s5_overview()
     weight_comparison(gif=not args.no_gif)
+    s1_before_after()
     if not args.no_gif:
         search_gifs()
 

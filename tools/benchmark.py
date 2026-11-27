@@ -50,7 +50,8 @@ def summarise(rows):
     groups = {}
     for r in rows:
         groups.setdefault((r["label"], group_of(r["scenario"])), []).append(r)
-    head = ("| label | scenario | runs | success | search ms median | p95 | smooth ms median "
+    head = ("| label | scenario | runs | success | search ms median | p95 | shortcut ms median "
+            "| smooth ms median "
             "| expansions median | length m | switches | max curv. raw | max curv. "
             "| min clearance m | runs put back |")
     lines = [head, "|" + "---|" * (head.count("|") - 1)]
@@ -64,8 +65,9 @@ def summarise(rows):
             return f % v if ok else "-"
 
         t = col("search_ms", rs)
-        lines.append("| %s | %s | %d | %d/%d | %.1f | %.1f | %s | %s | %s | %s | %s | %s | %s | %s |" % (
+        lines.append("| %s | %s | %d | %d/%d | %.1f | %.1f | %s | %s | %s | %s | %s | %s | %s | %s | %s |" % (
             label, sc, len(rs), len(ok), len(rs), statistics.median(t), pct(t, 0.95),
+            fmt(statistics.median(col("shortcut_ms") or [0.0]) if ok else 0, "%.1f"),
             fmt(statistics.median(col("smooth_ms")) if ok else 0, "%.1f"),
             fmt(statistics.median(col("expansions")) if ok else 0, "%.0f"),
             fmt(statistics.median(col("length")) if ok else 0, "%.1f"),
