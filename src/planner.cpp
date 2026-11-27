@@ -31,6 +31,7 @@ PlanResult HybridAStarPlanner::plan(
   };
   PlanResult result;
   map_ = map;
+  checker_ = std::make_unique<CollisionChecker>(map_, config_);
   buildObstacleKDTree();
 
   // Build start state
@@ -157,18 +158,15 @@ PlanResult HybridAStarPlanner::plan(
 
       for (int i=1; i<=n_steps; ++i) {
         double frac = double(i)/double(n_steps);
-        double dir  = prim.is_reverse ? -1.0 : 1.0;
-        double l    = config_.step_size * dir;
-        double beta = (l / config_.wheel_base)
-                    * std::tan(prim.steering_angle);
-        double dxp = frac*l * std::cos(current->theta + beta*frac*0.5);
-        double dyp = frac*l * std::sin(current->theta + beta*frac*0.5);
-        double th  = current->theta + beta*frac;
+        double l    = config_.step_size * (prim.is_reverse ? -1.0 : 1.0);
+        Pose2D p = primitivePose({current->x, current->y, current->theta},
+                                 prim.steering_angle, l * frac,
+                                 config_.wheel_base);
 
         State temp;
-        temp.x             = current->x + dxp;
-        temp.y             = current->y + dyp;
-        temp.theta         = th;
+        temp.x             = p.x;
+        temp.y             = p.y;
+        temp.theta         = p.theta;
         temp.is_reverse    = prim.is_reverse;
         temp.steering_angle= prim.steering_angle;
 
@@ -255,58 +253,8 @@ double HybridAStarPlanner::computeHeuristic(const State &s) const {
   return config_.heuristic_weight * heuristic_[gy * map_.width + gx];
 }
 
-bool HybridAStarPlanner::isPointInObstacle(double x, double y) const {
-  double res = map_.resolution;
-  int ix = int(std::floor((x - map_.origin_x)/res));
-  int iy = int(std::floor((y - map_.origin_y)/res));
-  if(ix<0||iy<0||ix>=map_.width||iy>=map_.height) return true;
-  return map_.data[iy*map_.width + ix] >= 100;
-}
-
-std::vector<std::pair<double,double>>
-HybridAStarPlanner::getVehicleCorners(const State &s) const {
-  double L = config_.vehicle_length, W = config_.vehicle_width;
-  double c = std::cos(s.theta), s_ = std::sin(s.theta);
-  std::vector<std::pair<double,double>> lc = {
-    { L/2,  W/2}, { L/2, -W/2},
-    {-L/2, -W/2}, {-L/2,  W/2}
-  }, out;
-  for (auto &p : lc) {
-    out.push_back({
-      s.x + p.first*c - p.second*s_,
-      s.y + p.first*s_ + p.second*c
-    });
-  }
-  return out;
-}
-
-bool HybridAStarPlanner::isVehicleInCollision(const State &s) const {
-  for (auto &p : getVehicleCorners(s)) {
-    if (isPointInObstacle(p.first, p.second)) return true;
-  }
-  double L = config_.vehicle_length, W = config_.vehicle_width;
-  double c = std::cos(s.theta), s_ = std::sin(s.theta);
-  for (double v=-W/2; v<=W/2; v+=0.2) {
-    if (isPointInObstacle(
-          s.x + (L/2)*c - v*s_,
-          s.y + (L/2)*s_ + v*c)) return true;
-    if (isPointInObstacle(
-          s.x +(-L/2)*c - v*s_,
-          s.y +(-L/2)*s_ + v*c)) return true;
-  }
-  for (double u=-L/2; u<=L/2; u+=0.2) {
-    if (isPointInObstacle(
-          s.x + u*c - (W/2)*s_,
-          s.y + u*s_ + (W/2)*c)) return true;
-    if (isPointInObstacle(
-          s.x + u*c -(-W/2)*s_,
-          s.y + u*s_ +(-W/2)*c)) return true;
-  }
-  return false;
-}
-
 bool HybridAStarPlanner::isInCollision(const State &s) const {
-  return isVehicleInCollision(s);
+  return checker_->inCollision({s.x, s.y, s.theta});
 }
 
 void HybridAStarPlanner::buildObstacleKDTree() {

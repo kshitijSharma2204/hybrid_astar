@@ -1,5 +1,6 @@
 #pragma once
 
+#include "hybrid_astar/collision.hpp"
 #include "hybrid_astar/types.hpp"
 #include "hybrid_astar/utils.hpp"
 
@@ -46,6 +47,7 @@ private:
   PlannerConfig config_;
   std::vector<MotionPrimitive> motion_primitives_;
   GridMap map_;
+  std::unique_ptr<CollisionChecker> checker_;
   PointCloud obstacle_cloud_;
   std::unique_ptr<KDTree> obstacle_tree_;
   std::vector<double> heuristic_;
@@ -57,9 +59,6 @@ private:
   void buildHeuristic(const State &goal);
   
   bool isInCollision(const State& s) const;
-  bool isVehicleInCollision(const State& s) const;
-  bool isPointInObstacle(double x, double y) const;
-  std::vector<std::pair<double,double>> getVehicleCorners(const State& s) const;
   void log(const std::string& msg) const;
 };
 
