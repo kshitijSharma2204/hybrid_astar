@@ -2,5 +2,5 @@
 map: S4.pgm
 resolution: 0.1
 origin: 0.0 0.0
-start: 4.2 4.2 0
-goal: 36.2 36.2 90
+start: 2.95 4.2 0
+goal: 36.2 34.95 90

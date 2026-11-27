@@ -2,5 +2,5 @@
 map: seed_40.pgm
 resolution: 0.1
 origin: 0.0 0.0
-start: 20.4 35.96 27.1
-goal: 35.69 7.07 -80.1
+start: 19.287 35.391 27.1
+goal: 35.475 8.301 -80.1

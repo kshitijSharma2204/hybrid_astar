@@ -1,6 +1,6 @@
-# S2: parallel parking, slot is car length + 1.0 m
+# S2: parallel parking, slot is car length + 1.5 m
 map: S2.pgm
 resolution: 0.1
 origin: 0.0 0.0
-start: 4 5.5 0
-goal: 13.75 1.75 0
+start: 2.75 5.5 0
+goal: 12.75 1.75 0

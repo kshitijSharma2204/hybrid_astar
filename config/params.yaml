@@ -7,6 +7,7 @@ wheel_base: 2.5          # m
 max_steer: 0.45          # rad, so R_min = 2.5 / tan(0.45) = 5.17 m
 vehicle_length: 4.5      # m
 vehicle_width: 2.0       # m
+rear_axle_to_center: 1.25  # m, poses are the rear axle; footprint centre is this far ahead
 
 # search
 step_size: 1.0           # m per motion primitive

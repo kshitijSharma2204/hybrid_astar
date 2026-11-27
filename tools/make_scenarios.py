@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
 """Write the benchmark scenarios to scenarios/ as PGM + text files.
 
-S1  demo map from the old env_publisher.py
-S2  parallel parking, slot = car length + 1.0 m
-S3  dead end, the car has to back out
-S4  maze with narrow corridors
-S5  random obstacle fields, seeds 0..49, in scenarios/S5/
+S1        demo map from the old env_publisher.py
+S2        parallel parking, slot = car length + 1.5 m
+S2_tight  the same with car length + 1.0 m, which this car cannot do
+          (S2_tight_exit is the same map driven out of the slot)
+S3        dead end, the car has to back out
+S4        maze with narrow corridors
+S5        random obstacle fields, seeds 0..49, in scenarios/S5/
+
+Poses in the files are the rear axle, like in the planner. Here I place
+cars by their footprint centre and convert with to_rear_axle().
 """
 
 import argparse
@@ -17,6 +22,14 @@ import numpy as np
 FREE, OBSTACLE = 255, 0
 RES = 0.1
 CAR_L, CAR_W = 4.5, 2.0
+REAR_AXLE_TO_CENTER = 1.25
+
+
+def to_rear_axle(x, y, heading_deg):
+    """Footprint centre pose -> rear axle pose (what the planner uses)."""
+    th = math.radians(heading_deg)
+    return (round(x - REAR_AXLE_TO_CENTER * math.cos(th), 3),
+            round(y - REAR_AXLE_TO_CENTER * math.sin(th), 3), heading_deg)
 
 
 def write_pgm(path, img):
@@ -82,7 +95,8 @@ class Canvas:
 
 
 def footprint_clear(occ, x, y, theta, margin):
-    """True if the car rectangle grown by margin touches no occupied cell."""
+    """True if the car rectangle grown by margin touches no occupied cell.
+    (x, y) is the footprint centre here."""
     h, w = occ.shape
     half = math.hypot(CAR_L / 2 + margin, CAR_W / 2 + margin)
     c0, c1 = int((x - half) / RES), int((x + half) / RES) + 1
@@ -113,18 +127,18 @@ def make_s1():
     return img, (35, 55, 0), (50, 17, 180)
 
 
-def make_s2():
+def make_s2(slack=1.5):
     # A street with a curb along the bottom and two parked cars. The free
-    # slot between them is CAR_L + 1.0 m long.
+    # slot between them is CAR_L + slack long.
     cv = Canvas(30, 14)
     cv.box(0, 0, 30, 0.5)                  # curb
     slot_x0 = 11.0
-    slot_x1 = slot_x0 + CAR_L + 1.0
+    slot_x1 = slot_x0 + CAR_L + slack
     lane_y = 0.75 + CAR_W / 2              # parked cars sit 0.25 m off the curb
     cv.box(slot_x0 - CAR_L, lane_y - CAR_W / 2, slot_x0, lane_y + CAR_W / 2)
     cv.box(slot_x1, lane_y - CAR_W / 2, slot_x1 + CAR_L, lane_y + CAR_W / 2)
-    goal = ((slot_x0 + slot_x1) / 2, lane_y, 0)
-    start = (4.0, 5.5, 0)
+    goal = to_rear_axle((slot_x0 + slot_x1) / 2, lane_y, 0)
+    start = to_rear_axle(4.0, 5.5, 0)
     return cv.img, start, goal
 
 
@@ -137,7 +151,7 @@ def make_s3():
     y0, y1 = 12.0, 18.0
     cv.box(20, y0 - t, 39.5, y0)           # lower wall
     cv.box(20, y1, 39.5, y1 + t)           # upper wall
-    return cv.img, (34, 15, 0), (8, 15, 180)
+    return cv.img, to_rear_axle(34, 15, 0), to_rear_axle(8, 15, 180)
 
 
 def make_s4():
@@ -180,8 +194,8 @@ def make_s4():
             if north[r, c] and r < n - 1:
                 cv.box(x0, y0 + cell, x0 + cell + t, y0 + cell + t)
     mid = cell / 2 + t / 2
-    start = (mid, mid, 0)
-    goal = ((n - 1) * cell + mid, (n - 1) * cell + mid, 90)
+    start = to_rear_axle(mid, mid, 0)
+    goal = to_rear_axle((n - 1) * cell + mid, (n - 1) * cell + mid, 90)
     return cv.img, start, goal
 
 
@@ -250,7 +264,8 @@ def make_s5(seed):
             continue
         if not reachable(occ, start, goal):
             continue
-        deg = lambda p: (round(p[0], 2), round(p[1], 2), round(math.degrees(p[2]), 1))
+        def deg(p):
+            return to_rear_axle(round(p[0], 2), round(p[1], 2), round(math.degrees(p[2]), 1))
         return cv.img, deg(start), deg(goal)
     raise RuntimeError("seed %d: no valid start/goal after 200 maps" % seed)
 
@@ -264,7 +279,9 @@ def main():
 
     makers = [
         ("S1", make_s1, "S1: demo map from the old env_publisher.py"),
-        ("S2", make_s2, "S2: parallel parking, slot is car length + 1.0 m"),
+        ("S2", make_s2, "S2: parallel parking, slot is car length + 1.5 m"),
+        ("S2_tight", lambda: make_s2(1.0),
+         "S2_tight: slot is car length + 1.0 m, too short for this car (see docs/RESULTS.md)"),
         ("S3", make_s3, "S3: 6 m wide dead end, the car has to back out"),
         ("S4", make_s4, "S4: 5x5 maze, 7.6 m corridors"),
     ]
@@ -272,6 +289,15 @@ def main():
         img, start, goal = fn()
         write_scenario(args.out, name, img, start, goal, comment)
         print(name, img.shape, start, goal)
+
+    # S2_tight backwards: start parked in the slot, goal out on the street.
+    # If the planner cannot get out, it cannot get in either.
+    _, _, parked = make_s2(1.0)
+    with open(os.path.join(args.out, "S2_tight_exit.txt"), "w") as f:
+        f.write("# S2_tight driven out of the slot, used to check that it is infeasible\n")
+        f.write("map: S2_tight.pgm\nresolution: %g\norigin: 0.0 0.0\n" % RES)
+        f.write("start: %g %g %g\n" % parked)
+        f.write("goal: %g %g %g\n" % to_rear_axle(24, 5.5, 0))
 
     for seed in range(50):
         img, start, goal = make_s5(seed)

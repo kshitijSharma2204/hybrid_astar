@@ -23,6 +23,7 @@ const std::vector<Field>& fields() {
     {"max_steer",             &PlannerConfig::max_steer,             nullptr, 1e-3},
     {"vehicle_length",        &PlannerConfig::vehicle_length,        nullptr, 1e-3},
     {"vehicle_width",         &PlannerConfig::vehicle_width,         nullptr, 1e-3},
+    {"rear_axle_to_center",   &PlannerConfig::rear_axle_to_center,   nullptr, 0},
     {"step_size",             &PlannerConfig::step_size,             nullptr, 1e-3},
     {"collision_step",        &PlannerConfig::collision_step,        nullptr, 1e-3},
     {"steer_samples",         nullptr, &PlannerConfig::steer_samples,         2},

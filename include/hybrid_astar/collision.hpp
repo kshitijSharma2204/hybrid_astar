@@ -4,7 +4,8 @@
 
 namespace hybrid_astar {
 
-// Checks the car rectangle, centred on the pose, against a grid.
+// Checks the car rectangle against a grid. The pose is the rear axle; the
+// rectangle's centre is rear_axle_to_center ahead of it.
 class CollisionChecker {
 public:
   CollisionChecker(const GridMap& grid, const PlannerConfig& cfg);
@@ -19,6 +20,7 @@ private:
   const GridMap& grid_;
   double length_;
   double width_;
+  double offset_;
 
   bool isPointInObstacle(double x, double y) const;
 };

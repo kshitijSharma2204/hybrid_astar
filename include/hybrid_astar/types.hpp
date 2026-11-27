@@ -32,6 +32,10 @@ struct PlannerConfig {
   double max_steer      = 0.45;   // rad
   double vehicle_length = 4.5;    // m
   double vehicle_width  = 2.0;    // m
+  // Poses are the rear axle centre, which is what the bicycle model turns
+  // about. The footprint centre is this far ahead of it. 1.25 m gives 1.0 m
+  // overhangs front and back for a 4.5 m car with a 2.5 m wheelbase.
+  double rear_axle_to_center = 1.25;   // m
 
   // search
   double step_size      = 1.0;    // m per motion primitive

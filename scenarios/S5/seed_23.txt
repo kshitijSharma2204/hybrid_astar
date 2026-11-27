@@ -2,5 +2,5 @@
 map: seed_23.pgm
 resolution: 0.1
 origin: 0.0 0.0
-start: 32.97 17.32 129.5
-goal: 10.81 24.78 -36.3
+start: 33.765 16.355 129.5
+goal: 9.803 25.52 -36.3

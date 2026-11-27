@@ -10,7 +10,8 @@ namespace hybrid_astar {
 CollisionChecker::CollisionChecker(const GridMap& grid, const PlannerConfig& cfg)
   : grid_{grid},
     length_{cfg.vehicle_length},
-    width_{cfg.vehicle_width}
+    width_{cfg.vehicle_width},
+    offset_{cfg.rear_axle_to_center}
 {
 }
 
@@ -21,9 +22,10 @@ bool CollisionChecker::isPointInObstacle(double x, double y) const {
   return isOccupied(grid_, ix, iy);
 }
 
-bool CollisionChecker::inCollision(const Pose2D& s) const {
+bool CollisionChecker::inCollision(const Pose2D& p) const {
   double L = length_, W = width_;
-  double c = std::cos(s.theta), s_ = std::sin(s.theta);
+  double c = std::cos(p.theta), s_ = std::sin(p.theta);
+  const Pose2D s{p.x + offset_*c, p.y + offset_*s_, p.theta};
   const std::pair<double,double> corners[4] = {
     { L/2,  W/2}, { L/2, -W/2},
     {-L/2, -W/2}, {-L/2,  W/2}

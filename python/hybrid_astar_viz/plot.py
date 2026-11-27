@@ -8,11 +8,16 @@ REVERSE = "#d0342c"
 RAW = "#888888"
 
 
-def car_polygon(x, y, theta, length, width):
-    """Corners of the car rectangle centred on (x, y), as a (4, 2) array."""
+def car_polygon(x, y, theta, length, width, rear_axle_to_center=0.0):
+    """Corners of the car rectangle as a (4, 2) array.
+
+    (x, y) is the rear axle; the rectangle's centre is rear_axle_to_center
+    ahead of it, the same convention as the planner.
+    """
     c, s = np.cos(theta), np.sin(theta)
-    local = np.array([[length / 2, width / 2], [length / 2, -width / 2],
-                      [-length / 2, -width / 2], [-length / 2, width / 2]])
+    d = rear_axle_to_center
+    local = np.array([[d + length / 2, width / 2], [d + length / 2, -width / 2],
+                      [d - length / 2, -width / 2], [d - length / 2, width / 2]])
     return local @ np.array([[c, s], [-s, c]]) + [x, y]
 
 
@@ -50,13 +55,15 @@ def draw_path(ax, x, y, direction, lw=2.0, zorder=4):
 
 
 def draw_car(ax, x, y, theta, config, color="k", alpha=1.0, fill=False, lw=1.0, zorder=5):
-    poly = Polygon(car_polygon(x, y, theta, config.vehicle_length, config.vehicle_width),
+    poly = Polygon(car_polygon(x, y, theta, config.vehicle_length, config.vehicle_width,
+                               config.rear_axle_to_center),
                    closed=True, fill=fill, ec=color, fc=color if fill else "none",
                    alpha=alpha, lw=lw, zorder=zorder)
     ax.add_patch(poly)
-    # a short line from the centre to the front so the heading is visible
-    hx = x + 0.5 * config.vehicle_length * np.cos(theta)
-    hy = y + 0.5 * config.vehicle_length * np.sin(theta)
+    # a line from the rear axle to the front bumper shows the heading
+    front = config.rear_axle_to_center + 0.5 * config.vehicle_length
+    hx = x + front * np.cos(theta)
+    hy = y + front * np.sin(theta)
     line, = ax.plot([x, hx], [y, hy], color=color, lw=lw, alpha=alpha, zorder=zorder)
     return [poly, line]
 

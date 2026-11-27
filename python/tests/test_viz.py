@@ -23,6 +23,9 @@ def test_car_polygon_size():
     # turned 90 degrees, so 2.0 m wide in x and 4.5 m long in y
     assert np.ptp(p[:, 0]) == pytest.approx(2.0)
     assert np.ptp(p[:, 1]) == pytest.approx(4.5)
+    # with the pose at the rear axle the box sits 1.25 m further ahead
+    q = car_polygon(1.0, 2.0, np.pi / 2, 4.5, 2.0, 1.25)
+    assert q[:, 1].mean() == pytest.approx(2.0 + 1.25)
 
 
 def test_plot_and_animate(tmp_path):
