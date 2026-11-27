@@ -51,6 +51,7 @@ private:
   GridMap map_;
   std::unique_ptr<CollisionChecker> checker_;
   std::vector<Node> nodes_;
+  Pose2D goal_;
   int n_substeps_ = 1;
   ReedsShepp rs_;
   PointCloud obstacle_cloud_;

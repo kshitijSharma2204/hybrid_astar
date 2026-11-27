@@ -49,6 +49,7 @@ PlanResult HybridAStarPlanner::plan(
   goal.y = goal_pose.y;
   goal.theta = wrapAngle(goal_pose.theta);
 
+  goal_ = {goal.x, goal.y, goal.theta};
   buildHeuristic(goal);
 
   if (isInCollision(start)) {
@@ -178,7 +179,8 @@ PlanResult HybridAStarPlanner::plan(
       succ.g = current.g
              + config_.step_size * (prim.is_reverse
                  ? config_.reverse_penalty : 1.0)
-             + (prim.is_reverse != current.is_reverse
+             // the start has no direction yet, so its first move is free
+             + (cur != 0 && prim.is_reverse != current.is_reverse
                  ? config_.direction_change_cost : 0.0)
              + std::abs(prim.steering_angle - current.steering_angle)
                  * config_.steer_change_cost
@@ -265,8 +267,15 @@ double HybridAStarPlanner::heuristic2d(const Node &s) const {
   return heuristic_[gy * map_.width + gx];
 }
 
+// Two lower bounds on the remaining path length; I take the larger. The
+// 2D one knows the obstacles but not the turning radius, the Reeds-Shepp
+// one knows the turning radius but not the obstacles.
 double HybridAStarPlanner::computeHeuristic(const Node &s) const {
-  return config_.heuristic_weight * heuristic2d(s);
+  double h = heuristic2d(s);
+  if (config_.rs_heuristic) {
+    h = std::max(h, rs_.length({s.x, s.y, s.theta}, goal_));
+  }
+  return config_.heuristic_weight * h;
 }
 
 // Samples the shortest Reeds-Shepp curve from the node to the goal and

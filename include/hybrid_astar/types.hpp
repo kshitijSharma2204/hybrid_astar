@@ -38,12 +38,12 @@ struct PlannerConfig {
   double rear_axle_to_center = 1.25;   // m
 
   // search
-  double step_size      = 1.0;    // m per motion primitive
+  double step_size      = 0.5;    // m per motion primitive
   double collision_step = 0.2;    // m between collision checks on a primitive
-  int    steer_samples  = 3;      // steering angles from -max_steer to +max_steer
-  double xy_resolution  = 0.1;    // m, cell size of the closed set
-  int    heading_bins   = 24;
-  int    max_expansions = 1000000;
+  int    steer_samples  = 5;      // steering angles from -max_steer to +max_steer
+  double xy_resolution  = 0.2;    // m, cell size of the closed set
+  int    heading_bins   = 72;
+  int    max_expansions = 200000;
   double goal_pos_tol     = 0.5;  // m, only used when analytic expansion is off
   double goal_heading_tol = 0.3;  // rad, same
 
@@ -53,11 +53,12 @@ struct PlannerConfig {
   double rs_sample_step = 0.1;                // m between collision checks on the curve
 
   // cost weights
-  double reverse_penalty       = 10.0;   // multiplier on reverse distance
-  double direction_change_cost = 150.0;
+  double reverse_penalty       = 1.5;   // multiplier on reverse distance
+  double direction_change_cost = 5.0;
   double steer_cost            = 1.0;    // per rad of steering
   double steer_change_cost     = 5.0;    // per rad of steering change
-  double heuristic_weight      = 50.0;
+  double heuristic_weight      = 5.0;
+  int    rs_heuristic          = 1;      // 1: h = max(2D distance, Reeds-Shepp length)
 
   double minTurningRadius() const { return wheel_base / std::tan(max_steer); }
 };

@@ -10,12 +10,12 @@ vehicle_width: 2.0       # m
 rear_axle_to_center: 1.25  # m, poses are the rear axle; footprint centre is this far ahead
 
 # search
-step_size: 1.0           # m per motion primitive
+step_size: 0.5           # m per motion primitive
 collision_step: 0.2      # m between collision checks along a primitive
-steer_samples: 3         # steering angles from -max_steer to +max_steer
-xy_resolution: 0.1       # m, cell size of the closed set
-heading_bins: 24         # 15 degrees each
-max_expansions: 1000000  # give up after this many
+steer_samples: 5         # steering angles from -max_steer to +max_steer
+xy_resolution: 0.2       # m, cell size of the closed set
+heading_bins: 72         # 5 degrees each
+max_expansions: 200000   # give up after this many
 goal_pos_tol: 0.5        # m, only used when analytic expansion is off
 goal_heading_tol: 0.3    # rad, same
 
@@ -25,8 +25,9 @@ analytic_expansion_distance: 10.0  # m, try on every expansion when this close
 rs_sample_step: 0.1                # m between collision checks on the curve
 
 # costs
-reverse_penalty: 10.0          # multiplier on distance driven in reverse
-direction_change_cost: 150.0   # added at every forward/reverse switch
+reverse_penalty: 1.5           # multiplier on distance driven in reverse
+direction_change_cost: 5.0     # added at every forward/reverse switch
 steer_cost: 1.0                # per rad of steering
 steer_change_cost: 5.0         # per rad of change in steering
-heuristic_weight: 50.0         # 1 = plain A*, larger = greedier
+heuristic_weight: 5.0          # 1 = plain A*, larger = greedier
+rs_heuristic: 1                # 1: h = max(2D distance, Reeds-Shepp length), 0: 2D only

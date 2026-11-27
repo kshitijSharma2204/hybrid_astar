@@ -40,6 +40,7 @@ const std::vector<Field>& fields() {
     {"steer_cost",            &PlannerConfig::steer_cost,            nullptr, 0},
     {"steer_change_cost",     &PlannerConfig::steer_change_cost,     nullptr, 0},
     {"heuristic_weight",      &PlannerConfig::heuristic_weight,      nullptr, 1},
+    {"rs_heuristic",          nullptr, &PlannerConfig::rs_heuristic,          0},
   };
   return f;
 }
