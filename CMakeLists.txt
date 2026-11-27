@@ -3,6 +3,7 @@ project(hybrid_astar CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
@@ -17,14 +18,16 @@ endif()
 # versions.
 find_package(ompl REQUIRED)
 
-# Files are listed by hand so the pure pursuit work in src/ is not built.
-add_executable(hybrid_astar_cli
-  src/cli.cpp
+# Sources are listed by hand so the pure pursuit work in src/ is not built.
+add_library(hybrid_astar_core STATIC
   src/planner.cpp
   src/scenario.cpp
 )
-target_include_directories(hybrid_astar_cli PRIVATE
-  ${CMAKE_CURRENT_SOURCE_DIR}/include
-  ${OMPL_INCLUDE_DIRS}
+target_include_directories(hybrid_astar_core
+  PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
+  PRIVATE ${OMPL_INCLUDE_DIRS}
 )
-target_link_libraries(hybrid_astar_cli PRIVATE ${OMPL_LIBRARIES})
+target_link_libraries(hybrid_astar_core PUBLIC ${OMPL_LIBRARIES})
+
+add_executable(hybrid_astar_cli src/cli.cpp)
+target_link_libraries(hybrid_astar_cli PRIVATE hybrid_astar_core)

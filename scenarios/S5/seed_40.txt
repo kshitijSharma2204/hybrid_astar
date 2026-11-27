@@ -1,0 +1,6 @@
+# S5: random obstacles, seed 40
+map: seed_40.pgm
+resolution: 0.1
+origin: 0.0 0.0
+start: 20.4 35.96 27.1
+goal: 35.69 7.07 -80.1

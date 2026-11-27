@@ -1,10 +1,11 @@
 #pragma once
 
-#include "utils.hpp"
+#include "hybrid_astar/types.hpp"
+#include "hybrid_astar/utils.hpp"
+
 #include <functional>
 #include <memory>
 #include <nanoflann.hpp>
-#include <optional>
 #include <string>
 #include <vector>
 
@@ -30,46 +31,28 @@ using KDTree = nanoflann::KDTreeSingleIndexAdaptor<
 
 class HybridAStarPlanner {
 public:
-  explicit HybridAStarPlanner(const VehicleModel& model,
-                              double yaw_resolution,
-                              int yaw_bins);
+  explicit HybridAStarPlanner(const PlannerConfig& config);
 
-  std::optional<std::vector<Pose2D>> plan(
-    const Pose2D& start_pose,
-    const Pose2D& goal_pose,
-    const GridMap& map);
-
-  bool tryReedsSheppConnect(
-    const State& current,
-    const State& goal,
-    std::vector<State>& path_states) const;
+  PlanResult plan(const GridMap& map,
+                  const Pose2D& start_pose,
+                  const Pose2D& goal_pose);
 
   void setLogger(std::function<void(const std::string&)> logger) {
     logger_ = std::move(logger);
   }
-  int lastExpansions() const { return expansions_; }
+  const PlannerConfig& config() const { return config_; }
 
 private:
-  // Cost weights to match Python version
-  static constexpr double kReverseCost      = 10.0;
-  static constexpr double kDirectionChange  = 150.0;
-  static constexpr double kSteerAngleCost   = 1.0;
-  static constexpr double kSteerAngleChange = 5.0;
-  static constexpr double kHybridWeight     = 50.0;
-
-  VehicleModel vehicle_model_;
+  PlannerConfig config_;
   std::vector<MotionPrimitive> motion_primitives_;
   GridMap map_;
   PointCloud obstacle_cloud_;
   std::unique_ptr<KDTree> obstacle_tree_;
   std::vector<double> heuristic_;
   double yaw_resolution_;
-  int yaw_bins_;
   std::function<void(const std::string&)> logger_;
-  int expansions_ = 0;
 
   void buildObstacleKDTree();
-  std::vector<State> generateNextStates(const State& current);
   double computeHeuristic(const State &s) const;
   void buildHeuristic(const State &goal);
   

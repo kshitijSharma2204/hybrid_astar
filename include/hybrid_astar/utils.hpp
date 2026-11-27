@@ -1,36 +1,12 @@
 #pragma once
 
+#include "hybrid_astar/types.hpp"
+
 #include <cmath>
-#include <cstdint>
 #include <memory>
 #include <vector>
 
-struct Pose2D {
-  double x     = 0.0;   // meters
-  double y     = 0.0;   // meters
-  double theta = 0.0;   // radians
-};
-
-// Same layout as nav_msgs/OccupancyGrid: row 0 is the bottom of the map
-// (smallest y), values are 0..100 and 100 means occupied.
-struct GridMap {
-  int width  = 0;
-  int height = 0;
-  double resolution = 0.1;   // meters per cell
-  double origin_x = 0.0;     // world position of cell (0,0)'s corner
-  double origin_y = 0.0;
-  std::vector<int8_t> data;
-};
-
-struct VehicleModel {
-  double wheel_base = 2.5;                // meters
-  double max_steering_angle = 0.45;       // radians
-  double step_size = 1.0;                 // meters
-  double length = 4.5;                    // meters
-  double width = 2.0;                     // meters
-  double min_turning_radius = wheel_base
-    / std::tan(max_steering_angle);       // meters
-};
+namespace hybrid_astar {
 
 struct State {
   double x    = 0.0;       // position
@@ -52,13 +28,13 @@ struct MotionPrimitive {
 };
 
 inline std::vector<MotionPrimitive>
-generateMotionPrimitives(const VehicleModel& model) {
+generateMotionPrimitives(const PlannerConfig& cfg) {
   std::vector<MotionPrimitive> primitives;
-  // example: straight/no-steer/left-steer, forward and reverse
+  // full left, straight, full right; forward and reverse
   std::vector<double> steers = {
-    -model.max_steering_angle,
+    -cfg.max_steer,
      0.0,
-     model.max_steering_angle
+     cfg.max_steer
   };
   for (bool rev : {false,true}) {
     for (double a : steers) {
@@ -67,3 +43,5 @@ generateMotionPrimitives(const VehicleModel& model) {
   }
   return primitives;
 }
+
+} // namespace hybrid_astar

@@ -1,0 +1,6 @@
+# S4: 5x5 maze, 7.6 m corridors
+map: S4.pgm
+resolution: 0.1
+origin: 0.0 0.0
+start: 4.2 4.2 0
+goal: 36.2 36.2 90

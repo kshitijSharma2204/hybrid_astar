@@ -1,52 +1,75 @@
 #include "hybrid_astar/planner.hpp"
 #include "hybrid_astar/scenario.hpp"
 
-#include <chrono>
 #include <cstdio>
+#include <cstring>
 #include <exception>
 #include <fstream>
 #include <iostream>
+#include <string>
 
-using hybrid_astar::HybridAStarPlanner;
+using namespace hybrid_astar;
+
+namespace {
+
+const char* kUsage =
+  "usage: hybrid_astar_cli --scenario FILE [--out FILE] [-v]\n"
+  "\n"
+  "  --scenario FILE   scenario text file (see scenarios/)\n"
+  "  --out FILE        write the path as CSV: x,y,theta,direction\n"
+  "  -v                print planner log messages to stderr\n";
+
+void writePath(const std::string& file, const PlanResult& r) {
+  std::ofstream out(file);
+  if (!out) throw std::runtime_error("cannot write " + file);
+  out << "x,y,theta,direction\n";
+  char buf[128];
+  for (size_t i = 0; i < r.poses.size(); ++i) {
+    const auto& p = r.poses[i];
+    std::snprintf(buf, sizeof(buf), "%.6f,%.6f,%.6f,%d\n",
+                  p.x, p.y, p.theta, r.direction[i]);
+    out << buf;
+  }
+}
+
+} // namespace
 
 int main(int argc, char** argv) {
-  if (argc < 2 || argc > 3) {
-    std::cerr << "usage: hybrid_astar_cli <scenario.txt> [path.csv]\n";
-    return 2;
-  }
+  std::string scenario_file, out_file;
+  bool verbose = false;
 
-  hybrid_astar::Scenario sc;
+  for (int i = 1; i < argc; ++i) {
+    std::string a = argv[i];
+    auto next = [&]() -> std::string {
+      if (i + 1 >= argc) {
+        std::cerr << a << " needs a value\n" << kUsage;
+        std::exit(2);
+      }
+      return argv[++i];
+    };
+    if (a == "--scenario") scenario_file = next();
+    else if (a == "--out") out_file = next();
+    else if (a == "-v") verbose = true;
+    else if (a == "-h" || a == "--help") { std::cout << kUsage; return 0; }
+    else { std::cerr << "unknown option " << a << "\n" << kUsage; return 2; }
+  }
+  if (scenario_file.empty()) { std::cerr << kUsage; return 2; }
+
   try {
-    sc = hybrid_astar::loadScenario(argv[1]);
+    Scenario sc = loadScenario(scenario_file);
+    PlannerConfig cfg;
+    HybridAStarPlanner planner(cfg);
+    if (verbose) planner.setLogger([](const std::string& m) { std::cerr << m << "\n"; });
+
+    PlanResult r = planner.plan(sc.grid, sc.start, sc.goal);
+    std::printf("scenario=%s success=%d expansions=%d search_ms=%.3f poses=%zu\n",
+                sc.name.c_str(), r.stats.success ? 1 : 0, r.stats.expansions,
+                r.stats.search_ms, r.poses.size());
+    if (!r.stats.success) std::fprintf(stderr, "%s\n", r.message.c_str());
+    if (r.stats.success && !out_file.empty()) writePath(out_file, r);
+    return r.stats.success ? 0 : 1;
   } catch (const std::exception& e) {
     std::cerr << e.what() << "\n";
     return 2;
   }
-
-  // Same settings the ROS node used.
-  VehicleModel vm;
-  const double yaw_res = M_PI / 12.0;
-  const int yaw_bins = int(2 * M_PI / yaw_res);
-  HybridAStarPlanner planner(vm, yaw_res, yaw_bins);
-  planner.setLogger([](const std::string& m) { std::cerr << m << "\n"; });
-
-  auto t0 = std::chrono::steady_clock::now();
-  auto path = planner.plan(sc.start, sc.goal, sc.grid);
-  auto t1 = std::chrono::steady_clock::now();
-  double ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
-
-  std::printf("scenario=%s success=%d expansions=%d time_ms=%.3f poses=%zu\n",
-              sc.name.c_str(), path ? 1 : 0, planner.lastExpansions(), ms,
-              path ? path->size() : size_t(0));
-
-  if (path && argc == 3) {
-    std::ofstream out(argv[2]);
-    out << "x,y,theta\n";
-    char buf[96];
-    for (auto& p : *path) {
-      std::snprintf(buf, sizeof(buf), "%.6f,%.6f,%.6f\n", p.x, p.y, p.theta);
-      out << buf;
-    }
-  }
-  return path ? 0 : 1;
 }

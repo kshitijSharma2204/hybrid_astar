@@ -1,0 +1,6 @@
+# S5: random obstacles, seed 33
+map: seed_33.pgm
+resolution: 0.1
+origin: 0.0 0.0
+start: 34.53 4.88 104
+goal: 14.26 16.93 -114.9

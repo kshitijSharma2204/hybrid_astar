@@ -4,6 +4,7 @@
 #include <ompl/base/spaces/ReedsSheppStateSpace.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <limits>
 #include <queue>
@@ -11,24 +12,25 @@
 
 namespace hybrid_astar {
 
-HybridAStarPlanner::HybridAStarPlanner(
-    const VehicleModel& model,
-    double yaw_resolution,
-    int yaw_bins)
-  : vehicle_model_{model},
-    yaw_resolution_{yaw_resolution},
-    yaw_bins_{yaw_bins}
+HybridAStarPlanner::HybridAStarPlanner(const PlannerConfig& config)
+  : config_{config},
+    yaw_resolution_{2*M_PI / config.heading_bins}
 {
-  motion_primitives_ = generateMotionPrimitives(vehicle_model_);
+  motion_primitives_ = generateMotionPrimitives(config_);
 }
 
-std::optional<std::vector<Pose2D>> HybridAStarPlanner::plan(
+PlanResult HybridAStarPlanner::plan(
+    const GridMap& map,
     const Pose2D& start_pose,
-    const Pose2D& goal_pose,
-    const GridMap& map)
+    const Pose2D& goal_pose)
 {
+  auto t_start = std::chrono::steady_clock::now();
+  auto elapsedMs = [&]() {
+    return std::chrono::duration<double, std::milli>(
+      std::chrono::steady_clock::now() - t_start).count();
+  };
+  PlanResult result;
   map_ = map;
-  expansions_ = 0;
   buildObstacleKDTree();
 
   // Build start state
@@ -52,12 +54,14 @@ std::optional<std::vector<Pose2D>> HybridAStarPlanner::plan(
 
   // Sanity checks
   if (isInCollision(start)) {
-    log("Start in obstacle, abort");
-    return std::nullopt;
+    result.message = "start pose is in collision";
+    log(result.message);
+    return result;
   }
   if (isInCollision(goal)) {
-    log("Goal in obstacle, abort");
-    return std::nullopt;
+    result.message = "goal pose is in collision";
+    log(result.message);
+    return result;
   }
 
   {
@@ -93,7 +97,7 @@ std::optional<std::vector<Pose2D>> HybridAStarPlanner::plan(
     int iy = int(std::round((s.y - oy)/res));
     double th = std::fmod(s.theta, 2*M_PI);
     if (th < 0) th += 2*M_PI;
-    int iyaw = int(std::floor(th/yaw_resolution_)) % yaw_bins_;
+    int iyaw = int(std::floor(th/yaw_resolution_)) % config_.heading_bins;
 
     ix = std::clamp(ix, 0, W-1);
     iy = std::clamp(iy, 0, map_.height-1);
@@ -104,9 +108,10 @@ std::optional<std::vector<Pose2D>> HybridAStarPlanner::plan(
   open_set.push(std::make_shared<State>(start));
   std::unordered_set<uint64_t> closed_set;
 
-  // fallback tolerances
-  constexpr double pos_tol   = 0.5;
-  constexpr double theta_tol = 0.3;
+  const double pos_tol   = config_.goal_pos_tol;
+  const double theta_tol = config_.goal_heading_tol;
+  const int n_steps = std::max(1, int(std::ceil(
+    config_.step_size / config_.collision_step - 1e-9)));
 
   // main A* loop
   while (!open_set.empty()) {
@@ -115,7 +120,7 @@ std::optional<std::vector<Pose2D>> HybridAStarPlanner::plan(
     uint64_t key = discretize(*current);
     if (closed_set.count(key)) continue;
     closed_set.insert(key);
-    ++expansions_;
+    ++result.stats.expansions;
 
     // 2) fallback: goal‐proximity
     double dx    = current->x - goal.x;
@@ -123,33 +128,38 @@ std::optional<std::vector<Pose2D>> HybridAStarPlanner::plan(
     double dpos  = std::hypot(dx, dy);
     double dtheta= std::fabs(current->theta - goal.theta);
     if (dpos < pos_tol && dtheta < theta_tol) {
-      std::vector<Pose2D> path;
-
       // prepend start
-      path.push_back(start_pose);
+      result.poses.push_back(start_pose);
+      result.direction.push_back(1);
       // backtrack
-      std::vector<Pose2D> tail;
-      for (auto s = current; s!=nullptr; s=s->parent) {
-        tail.push_back({s->x, s->y, s->theta});
-      }
+      std::vector<std::shared_ptr<State>> tail;
+      for (auto s = current; s!=nullptr; s=s->parent) tail.push_back(s);
       std::reverse(tail.begin(), tail.end());
-      path.insert(path.end(), tail.begin(), tail.end());
-      log("plan(): success, " + std::to_string(path.size()) + " poses");
-      return path;
+      for (size_t i = 0; i < tail.size(); ++i) {
+        result.poses.push_back({tail[i]->x, tail[i]->y, tail[i]->theta});
+        // the start node has no motion; give it the direction of the next one
+        const State& m = (i == 0 && tail.size() > 1) ? *tail[1] : *tail[i];
+        result.direction.push_back(m.is_reverse ? -1 : 1);
+      }
+      result.direction[0] = result.direction[1];
+      result.stats.success = true;
+      result.stats.search_ms = elapsedMs();
+      result.message = "found a path with " +
+                       std::to_string(result.poses.size()) + " poses";
+      log("plan(): " + result.message);
+      return result;
     }
 
     // 3) expand non‐holonomic primitives (with full cost + sub‐step collision)
     for (auto &prim : motion_primitives_) {
-      // simulate in 5 sub‐steps
-      const int n_steps = 5;
       bool   bad       = false;
       State  last = *current;
 
       for (int i=1; i<=n_steps; ++i) {
         double frac = double(i)/double(n_steps);
         double dir  = prim.is_reverse ? -1.0 : 1.0;
-        double l    = vehicle_model_.step_size * dir;
-        double beta = (l / vehicle_model_.wheel_base)
+        double l    = config_.step_size * dir;
+        double beta = (l / config_.wheel_base)
                     * std::tan(prim.steering_angle);
         double dxp = frac*l * std::cos(current->theta + beta*frac*0.5);
         double dyp = frac*l * std::sin(current->theta + beta*frac*0.5);
@@ -175,14 +185,14 @@ std::optional<std::vector<Pose2D>> HybridAStarPlanner::plan(
                                last.y-current->y);
       double g = current->g
                + move * (prim.is_reverse
-                   ? kReverseCost : 1.0)
+                   ? config_.reverse_penalty : 1.0)
                + (prim.is_reverse != current->is_reverse
-                   ? kDirectionChange : 0.0)
+                   ? config_.direction_change_cost : 0.0)
                + std::abs(prim.steering_angle
                    - current->steering_angle)
-                   * kSteerAngleChange
+                   * config_.steer_change_cost
                + std::abs(prim.steering_angle)
-                   * kSteerAngleCost;
+                   * config_.steer_cost;
 
       // push successor
       auto succ = std::make_shared<State>(last);
@@ -193,8 +203,10 @@ std::optional<std::vector<Pose2D>> HybridAStarPlanner::plan(
     }
   }
 
-  log("plan(): failed");
-  return std::nullopt;
+  result.stats.search_ms = elapsedMs();
+  result.message = "open set exhausted, no path";
+  log("plan(): " + result.message);
+  return result;
 }
 
 void HybridAStarPlanner::buildHeuristic(const State &goal) {
@@ -240,7 +252,7 @@ double HybridAStarPlanner::computeHeuristic(const State &s) const {
                       0, map_.width-1);
   int gy = std::clamp(int((s.y-map_.origin_y)/res),
                       0, map_.height-1);
-  return kHybridWeight * heuristic_[gy * map_.width + gx];
+  return config_.heuristic_weight * heuristic_[gy * map_.width + gx];
 }
 
 bool HybridAStarPlanner::isPointInObstacle(double x, double y) const {
@@ -253,7 +265,7 @@ bool HybridAStarPlanner::isPointInObstacle(double x, double y) const {
 
 std::vector<std::pair<double,double>>
 HybridAStarPlanner::getVehicleCorners(const State &s) const {
-  double L = vehicle_model_.length, W = vehicle_model_.width;
+  double L = config_.vehicle_length, W = config_.vehicle_width;
   double c = std::cos(s.theta), s_ = std::sin(s.theta);
   std::vector<std::pair<double,double>> lc = {
     { L/2,  W/2}, { L/2, -W/2},
@@ -272,7 +284,7 @@ bool HybridAStarPlanner::isVehicleInCollision(const State &s) const {
   for (auto &p : getVehicleCorners(s)) {
     if (isPointInObstacle(p.first, p.second)) return true;
   }
-  double L = vehicle_model_.length, W = vehicle_model_.width;
+  double L = config_.vehicle_length, W = config_.vehicle_width;
   double c = std::cos(s.theta), s_ = std::sin(s.theta);
   for (double v=-W/2; v<=W/2; v+=0.2) {
     if (isPointInObstacle(
