@@ -15,8 +15,13 @@ steer_samples: 3         # steering angles from -max_steer to +max_steer
 xy_resolution: 0.1       # m, cell size of the closed set
 heading_bins: 24         # 15 degrees each
 max_expansions: 1000000  # give up after this many
-goal_pos_tol: 0.5        # m
-goal_heading_tol: 0.3    # rad
+goal_pos_tol: 0.5        # m, only used when analytic expansion is off
+goal_heading_tol: 0.3    # rad, same
+
+# analytic expansion (Reeds-Shepp shot to the goal)
+analytic_expansion_interval: 10    # try every N expansions, 0 = off
+analytic_expansion_distance: 10.0  # m, try on every expansion when this close
+rs_sample_step: 0.1                # m between collision checks on the curve
 
 # costs
 reverse_penalty: 10.0          # multiplier on distance driven in reverse

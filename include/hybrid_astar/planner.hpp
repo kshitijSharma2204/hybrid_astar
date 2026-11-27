@@ -1,6 +1,7 @@
 #pragma once
 
 #include "hybrid_astar/collision.hpp"
+#include "hybrid_astar/reeds_shepp.hpp"
 #include "hybrid_astar/types.hpp"
 #include "hybrid_astar/utils.hpp"
 
@@ -51,6 +52,7 @@ private:
   std::unique_ptr<CollisionChecker> checker_;
   std::vector<Node> nodes_;
   int n_substeps_ = 1;
+  ReedsShepp rs_;
   PointCloud obstacle_cloud_;
   std::unique_ptr<KDTree> obstacle_tree_;
   std::vector<double> heuristic_;
@@ -58,9 +60,12 @@ private:
   std::function<void(const std::string&)> logger_;
 
   void buildObstacleKDTree();
+  double heuristic2d(const Node &s) const;
   double computeHeuristic(const Node &s) const;
   void buildHeuristic(const Node &goal);
   void buildPath(int goal_node, PlanResult& result) const;
+  bool tryReedsSheppConnect(int node, const Node& goal, PlanResult& result,
+                            SearchTrace* trace) const;
 
   bool isInCollision(const Node& s) const;
   void log(const std::string& msg) const;

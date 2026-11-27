@@ -23,6 +23,7 @@ add_library(hybrid_astar_core STATIC
   src/collision.cpp
   src/config.cpp
   src/planner.cpp
+  src/reeds_shepp.cpp
   src/scenario.cpp
 )
 target_include_directories(hybrid_astar_core
@@ -43,6 +44,7 @@ if(BUILD_TESTING)
     tests/test_config.cpp
     tests/test_geometry.cpp
     tests/test_planner.cpp
+    tests/test_reeds_shepp.cpp
   )
   target_link_libraries(unit_tests PRIVATE hybrid_astar_core GTest::gtest_main)
   target_compile_definitions(unit_tests PRIVATE HA_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")

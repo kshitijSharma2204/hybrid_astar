@@ -40,8 +40,13 @@ struct PlannerConfig {
   double xy_resolution  = 0.1;    // m, cell size of the closed set
   int    heading_bins   = 24;
   int    max_expansions = 1000000;
-  double goal_pos_tol     = 0.5;  // m
-  double goal_heading_tol = 0.3;  // rad
+  double goal_pos_tol     = 0.5;  // m, only used when analytic expansion is off
+  double goal_heading_tol = 0.3;  // rad, same
+
+  // analytic expansion: try a Reeds-Shepp curve to the goal
+  int    analytic_expansion_interval = 10;    // every N expansions, 0 = off
+  double analytic_expansion_distance = 10.0;  // m, try on every expansion when closer
+  double rs_sample_step = 0.1;                // m between collision checks on the curve
 
   // cost weights
   double reverse_penalty       = 10.0;   // multiplier on reverse distance

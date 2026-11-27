@@ -125,6 +125,7 @@ Scenario loadScenario(const std::string& path) {
   sc.name = path.substr(slash == std::string::npos ? 0 : slash + 1);
   auto dot = sc.name.rfind('.');
   if (dot != std::string::npos) sc.name.erase(dot);
+  if (!map_file.empty() && map_file[0] == '/') dir.clear();
   sc.grid = loadPgm(dir + map_file, res, origin[0], origin[1]);
   sc.start = {s[0], s[1], s[2] * M_PI / 180.0};
   sc.goal = {g[0], g[1], g[2] * M_PI / 180.0};

@@ -12,6 +12,7 @@ namespace hybrid_astar {
 
 HybridAStarPlanner::HybridAStarPlanner(const PlannerConfig& config)
   : config_{config},
+    rs_{config.minTurningRadius()},
     yaw_resolution_{2*M_PI / config.heading_bins}
 {
   motion_primitives_ = generateMotionPrimitives(config_);
@@ -124,10 +125,24 @@ PlanResult HybridAStarPlanner::plan(
     }
 
     const Node current = nodes_[cur];
-    double dpos   = std::hypot(current.x - goal.x, current.y - goal.y);
-    double dtheta = std::fabs(angleDiff(current.theta, goal.theta));
-    if (dpos < config_.goal_pos_tol && dtheta < config_.goal_heading_tol) {
-      buildPath(cur, result);
+    bool done = false;
+    if (config_.analytic_expansion_interval > 0) {
+      // Shoot a Reeds-Shepp curve at the goal every N expansions, and on
+      // every expansion once we are close (by the 2D distance-to-goal map).
+      bool close = heuristic2d(current) < config_.analytic_expansion_distance;
+      if (close ||
+          result.stats.expansions % config_.analytic_expansion_interval == 0) {
+        done = tryReedsSheppConnect(cur, goal, result, trace);
+      }
+    } else {
+      double dpos   = std::hypot(current.x - goal.x, current.y - goal.y);
+      double dtheta = std::fabs(angleDiff(current.theta, goal.theta));
+      if (dpos < config_.goal_pos_tol && dtheta < config_.goal_heading_tol) {
+        buildPath(cur, result);
+        done = true;
+      }
+    }
+    if (done) {
       result.stats.success = true;
       result.stats.search_ms = elapsedMs();
       result.message = "found a path with " +
@@ -244,10 +259,45 @@ void HybridAStarPlanner::buildHeuristic(const Node &goal) {
   }
 }
 
-double HybridAStarPlanner::computeHeuristic(const Node &s) const {
+double HybridAStarPlanner::heuristic2d(const Node &s) const {
   int gx = std::clamp(worldToCellX(map_, s.x), 0, map_.width-1);
   int gy = std::clamp(worldToCellY(map_, s.y), 0, map_.height-1);
-  return config_.heuristic_weight * heuristic_[gy * map_.width + gx];
+  return heuristic_[gy * map_.width + gx];
+}
+
+double HybridAStarPlanner::computeHeuristic(const Node &s) const {
+  return config_.heuristic_weight * heuristic2d(s);
+}
+
+// Samples the shortest Reeds-Shepp curve from the node to the goal and
+// checks every sample with the full footprint. On success the curve is
+// appended to the search path and the result is complete.
+bool HybridAStarPlanner::tryReedsSheppConnect(int node, const Node& goal,
+                                              PlanResult& result,
+                                              SearchTrace* trace) const {
+  const Node& n = nodes_[node];
+  std::vector<Pose2D> poses;
+  std::vector<int> dirs;
+  rs_.sample({n.x, n.y, n.theta}, {goal.x, goal.y, goal.theta},
+             config_.rs_sample_step, poses, dirs);
+
+  bool collided = false;
+  for (const auto& p : poses) {
+    if (checker_->inCollision(p)) {
+      collided = true;
+      break;
+    }
+  }
+  if (trace) trace->rs_attempts.push_back({n.trace_id, collided, poses});
+  if (collided) return false;
+
+  buildPath(node, result);
+  result.poses.insert(result.poses.end(), poses.begin(), poses.end());
+  result.direction.insert(result.direction.end(), dirs.begin(), dirs.end());
+  if (result.direction.size() > 1 && result.poses.size() == poses.size() + 1) {
+    result.direction[0] = result.direction[1];   // path is only the curve
+  }
+  return true;
 }
 
 bool HybridAStarPlanner::isInCollision(const Node &s) const {
