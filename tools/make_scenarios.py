@@ -281,7 +281,7 @@ def main():
         ("S1", make_s1, "S1: demo map from the old env_publisher.py"),
         ("S2", make_s2, "S2: parallel parking, slot is car length + 1.5 m"),
         ("S2_tight", lambda: make_s2(1.0),
-         "S2_tight: slot is car length + 1.0 m, too short for this car (see docs/RESULTS.md)"),
+         "S2_tight: slot is car length + 1.0 m, the search does not find a way in (see docs/RESULTS.md)"),
         ("S3", make_s3, "S3: 6 m wide dead end, the car has to back out"),
         ("S4", make_s4, "S4: 5x5 maze, 7.6 m corridors"),
     ]
@@ -294,7 +294,7 @@ def main():
     # If the planner cannot get out, it cannot get in either.
     _, _, parked = make_s2(1.0)
     with open(os.path.join(args.out, "S2_tight_exit.txt"), "w") as f:
-        f.write("# S2_tight driven out of the slot, used to check that it is infeasible\n")
+        f.write("# S2_tight driven out of the slot, to check whether the car fits\n")
         f.write("map: S2_tight.pgm\nresolution: %g\norigin: 0.0 0.0\n" % RES)
         f.write("start: %g %g %g\n" % parked)
         f.write("goal: %g %g %g\n" % to_rear_axle(24, 5.5, 0))

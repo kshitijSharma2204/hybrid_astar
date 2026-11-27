@@ -1,4 +1,4 @@
-# S2_tight: slot is car length + 1.0 m, too short for this car (see docs/RESULTS.md)
+# S2_tight: slot is car length + 1.0 m, the search does not find a way in (see docs/RESULTS.md)
 map: S2_tight.pgm
 resolution: 0.1
 origin: 0.0 0.0

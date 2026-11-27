@@ -22,9 +22,12 @@ the goal that hit something, blue is forward driving and red is reverse.
 - Collision checks: four covering circles against a distance map first,
   then an exact check of every grid cell under the car for poses the circles
   reject.
-- Smoothing: each stretch between direction changes is smoothed on its own,
-  keeping clear of obstacles and within the turning radius. Start, goal and
-  cusps do not move.
+- Shortcutting: within each stretch between direction changes, poses are
+  joined by shorter collision-free Reeds-Shepp curves that keep the
+  direction, which takes out the zig-zag the 0.5 m primitives leave.
+- Smoothing: each stretch between direction changes is then smoothed on its
+  own, keeping clear of obstacles and within the turning radius. Start, goal
+  and cusps do not move.
 - All parameters are in `config/params.yaml`.
 
 ## v1 and why ROS is gone
@@ -100,28 +103,40 @@ scenario.
 
 ## Results
 
-Release build on an i7-10870H, default parameters, commit `fb06823`. S1-S4
+Release build on an i7-10870H, default parameters, commit `a4bc295`. S1-S4
 were planned 20 times each and S5 once on each of 50 random maps.
 
 | scenario | success | search ms median | search ms p95 | expansions | length m | direction switches |
 |---|---|---|---|---|---|---|
-| S1 demo map | 20/20 | 306 | 329 | 7482 | 104.2 | 3 |
-| S2 parallel parking | 20/20 | 120 | 123 | 2578 | 21.8 | 5 |
-| S3 dead end | 20/20 | 14 | 15 | 10 | 29.4 | 1 |
-| S4 maze | 20/20 | 204 | 217 | 6220 | 93.3 | 4 |
-| S5 random, 50 maps | 50/50 | 27 | 67 | 196 (median) | 35.5 (median) | 1 (median) |
+| S1 demo map | 20/20 | 561 | 724 | 12439 | 87.0 | 1 |
+| S2 parallel parking | 20/20 | 206 | 233 | 3672 | 20.4 | 4 |
+| S3 dead end | 20/20 | 20 | 22 | 40 | 29.7 | 1 |
+| S4 maze | 20/20 | 260 | 317 | 6810 | 92.3 | 2 |
+| S5 random, 50 maps | 50/50 | 30 | 63 | 116 (median) | 33.0 (median) | 1 (median) |
 
 Against v1 on the same maps, v1 solves S1, S3, S4 and 39 of the 50 S5 maps,
-fails S2, and ends 0.35 to 0.47 m away from the goal. v2 solves all of them
-and ends on the goal pose. Smoothing takes 2 to 10 ms, and the smoothed
-paths stay under 1.05 times the full-steer curvature.
+fails S2, and ends 0.35 to 0.47 m away from the goal. v2 solves all of them,
+ends on the goal pose, and its paths are shorter: S1 87.0 m against v1's
+94.0 m, S4 92.3 against 109.0 m. Shortcutting and smoothing together take
+3 to 26 ms, and the final paths stay under 1.05 times the full-steer
+curvature.
+
+Up to `fb06823` the S1 path was 104 m, longer than v1's. The steering costs
+were charged per 0.5 m primitive, which made turning almost twice as
+expensive as driving straight, and I had raised the heuristic weight to 5
+to make the search finish. Setting the steering costs to 0, the weight to 2
+and the closed-set cells to 0.5 m, and adding the shortcut pass, brought it
+to 87 m. The S1 search now takes 561 ms instead of 306 ms. RESULTS.md has
+each step.
+
+![S1 before and after](results/v2/S1_before_after.png)
 
 ![parallel parking](results/v2/S2_search.gif)
 
-`heuristic_weight` (default 5) trades path cost for speed: 1 is plain A*,
-larger values expand fewer nodes but accept longer paths with more direction
-changes. With w = 1 only S3 and the S5 maps finish within 200000
-expansions. The picture below is the same S5 map with w = 1 and w = 50.
+`heuristic_weight` (default 2) trades path cost for speed: 1 is plain A*,
+larger values expand fewer nodes but accept more expensive paths with more
+direction changes. w = 1 solves every scenario too, but S1 takes 6.6 s. The
+picture below is the same S5 map with w = 1 and w = 50.
 
 ![w = 1 against w = 50](results/v2/weights_w1_vs_w50.png)
 
@@ -130,20 +145,24 @@ More numbers, and the commands that produce them, are in
 
 ## Own code and libraries
 
-The search, heuristics, collision checks, distance transform, smoother and
-plotting are written here. OMPL is used only for the Reeds-Shepp curves
+The search, heuristics, collision checks, distance transform, shortcut pass,
+smoother and plotting are written here. OMPL is used only for the Reeds-Shepp curves
 (`ompl::base::ReedsSheppStateSpace`, wrapped in `src/reeds_shepp.cpp`), and
 pybind11 only for the Python bindings.
 
 ## Limitations
 
-- With weight 5 the paths are not the shortest. On S1 the car backs up most
-  of the 104 m instead of turning around first.
-- The car must fit in a slot of its length + 1.2 m to park in it. The
-  car + 1.0 m slot in `scenarios/S2_tight` cannot be solved; RESULTS.md
-  shows why.
-- The smoother gains very little clearance, because the tightest spots are
-  usually the goal and the cusps, which it does not move.
+- The search minimises cost, not length. Reversing costs 1.5 per metre and
+  each direction change 5, so the cheapest path is not always the shortest.
+  On S1 the w = 2 path is the shorter one (87 m, 83 m of it in reverse); w = 1
+  finds a cheaper one that turns round first (91.7 m).
+- Hybrid A* is not complete: the closed set keeps one pose per cell and
+  heading, and sometimes throws away the one a manoeuvre needs. S2 fails at
+  some weights and cell sizes, and the car + 1.0 m slot in
+  `scenarios/S2_tight` is not solved even though the car can drive out of
+  it. RESULTS.md has the details.
+- Shorter paths pass close to obstacles (S3: 0.11 m), and the smoother adds
+  very little clearance.
 - The 2D distance part of the heuristic runs Dijkstra over the full-resolution
   grid for every goal, and the Reeds-Shepp length is computed for every new
   node. On large maps these are a large part of the time.
@@ -154,7 +173,7 @@ pybind11 only for the Python bindings.
 
 ```
 include/hybrid_astar/   headers
-src/                    planner, collision, smoother, Reeds-Shepp wrapper, CLI
+src/                    planner, collision, shortcut, smoother, Reeds-Shepp wrapper, CLI
 python/                 bindings, hybrid_astar_viz (plots, animation), tests
 tests/                  GoogleTest
 tools/                  scenario generator, benchmark, v1 comparison, media, demo

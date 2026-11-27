@@ -1,22 +1,22 @@
-| label | scenario | runs | success | search ms median | p95 | smooth ms median | expansions median | length m | switches | max curv. raw | max curv. | min clearance m | runs put back |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| reverse_penalty=1.5 direction_change_cost=150 | S1 | 1 | 1/1 | 289.3 | 289.3 | 9.4 | 6966 | 104.2 | 3 | 0.1932 | 0.1973 | 0.07 | 0 |
-| reverse_penalty=1.5 direction_change_cost=150 | S2 | 1 | 0/1 | 7673.1 | 7673.1 | - | - | - | - | - | - | - | - |
-| reverse_penalty=1.5 direction_change_cost=150 | S3 | 1 | 1/1 | 15.5 | 15.5 | 2.1 | 10 | 29.4 | 1 | 0.1932 | 0.1972 | 1.15 | 0 |
-| reverse_penalty=1.5 direction_change_cost=150 | S4 | 1 | 1/1 | 259.3 | 259.3 | 8.7 | 8040 | 92.9 | 0 | 0.1932 | 0.1974 | 0.08 | 0 |
-| reverse_penalty=1.5 direction_change_cost=150 | S5 | 50 | 50/50 | 27.8 | 197.9 | 3.9 | 216 | 36.5 | 1 | 0.1932 | 0.2005 | 0.06 | 3 |
-| reverse_penalty=1.5 direction_change_cost=5 | S1 | 1 | 1/1 | 314.1 | 314.1 | 9.3 | 7482 | 104.2 | 3 | 0.1932 | 0.1973 | 0.07 | 0 |
-| reverse_penalty=1.5 direction_change_cost=5 | S2 | 1 | 1/1 | 119.6 | 119.6 | 2.6 | 2578 | 21.8 | 5 | 0.1932 | 0.2001 | 0.06 | 0 |
-| reverse_penalty=1.5 direction_change_cost=5 | S3 | 1 | 1/1 | 15.7 | 15.7 | 2.1 | 10 | 29.4 | 1 | 0.1932 | 0.1972 | 1.15 | 0 |
-| reverse_penalty=1.5 direction_change_cost=5 | S4 | 1 | 1/1 | 200.9 | 200.9 | 8.0 | 6220 | 93.3 | 4 | 0.1932 | 0.2011 | 0.09 | 0 |
-| reverse_penalty=1.5 direction_change_cost=5 | S5 | 50 | 50/50 | 26.3 | 63.1 | 3.5 | 196 | 35.5 | 1 | 0.1932 | 0.2021 | 0.06 | 3 |
-| reverse_penalty=10 direction_change_cost=150 | S1 | 1 | 0/1 | 5935.0 | 5935.0 | - | - | - | - | - | - | - | - |
-| reverse_penalty=10 direction_change_cost=150 | S2 | 1 | 0/1 | 7443.8 | 7443.8 | - | - | - | - | - | - | - | - |
-| reverse_penalty=10 direction_change_cost=150 | S3 | 1 | 1/1 | 16.3 | 16.3 | 2.2 | 30 | 31.4 | 2 | 0.1932 | 0.1972 | 1.14 | 0 |
-| reverse_penalty=10 direction_change_cost=150 | S4 | 1 | 1/1 | 258.5 | 258.5 | 8.0 | 8040 | 92.9 | 0 | 0.1932 | 0.1974 | 0.08 | 0 |
-| reverse_penalty=10 direction_change_cost=150 | S5 | 50 | 50/50 | 30.4 | 1264.9 | 4.0 | 292 | 37.0 | 1 | 0.1932 | 0.2023 | 0.07 | 3 |
-| reverse_penalty=10 direction_change_cost=5 | S1 | 1 | 1/1 | 699.5 | 699.5 | 10.4 | 21070 | 114.8 | 2 | 0.1932 | 0.1983 | 0.12 | 0 |
-| reverse_penalty=10 direction_change_cost=5 | S2 | 1 | 1/1 | 2685.2 | 2685.2 | 2.1 | 63369 | 20.8 | 5 | 0.1932 | 0.1997 | 0.07 | 0 |
-| reverse_penalty=10 direction_change_cost=5 | S3 | 1 | 1/1 | 16.0 | 16.0 | 2.2 | 30 | 31.4 | 2 | 0.1932 | 0.1972 | 1.14 | 0 |
-| reverse_penalty=10 direction_change_cost=5 | S4 | 1 | 1/1 | 255.5 | 255.5 | 7.9 | 8330 | 93.3 | 0 | 0.1932 | 0.1976 | 0.08 | 0 |
-| reverse_penalty=10 direction_change_cost=5 | S5 | 50 | 50/50 | 30.0 | 309.7 | 3.8 | 280 | 36.0 | 1 | 0.1932 | 0.2023 | 0.06 | 3 |
+| label | scenario | runs | success | search ms median | p95 | shortcut ms median | smooth ms median | expansions median | length m | switches | max curv. raw | max curv. | min clearance m | runs put back |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| reverse_penalty=1.5 direction_change_cost=150 | S1 | 1 | 1/1 | 521.6 | 521.6 | 12.6 | 10.5 | 11733 | 87.0 | 1 | 0.1932 | 0.1975 | 0.07 | 0 |
+| reverse_penalty=1.5 direction_change_cost=150 | S2 | 1 | 1/1 | 1884.6 | 1884.6 | 0.4 | 4.4 | 41160 | 20.4 | 4 | 0.1932 | 0.1988 | 0.06 | 0 |
+| reverse_penalty=1.5 direction_change_cost=150 | S3 | 1 | 1/1 | 20.1 | 20.1 | 1.0 | 4.4 | 40 | 29.7 | 1 | 0.1932 | 0.1971 | 0.11 | 0 |
+| reverse_penalty=1.5 direction_change_cost=150 | S4 | 1 | 1/1 | 630.8 | 630.8 | 4.2 | 11.9 | 18688 | 96.8 | 2 | 0.1932 | 0.1988 | 0.08 | 0 |
+| reverse_penalty=1.5 direction_change_cost=150 | S5 | 50 | 50/50 | 30.0 | 71.5 | 2.7 | 4.6 | 140 | 33.6 | 1 | 0.1932 | 0.2028 | 0.05 | 1 |
+| reverse_penalty=1.5 direction_change_cost=5 | S1 | 1 | 1/1 | 574.6 | 574.6 | 13.4 | 12.2 | 12439 | 87.0 | 1 | 0.1932 | 0.1975 | 0.07 | 0 |
+| reverse_penalty=1.5 direction_change_cost=5 | S2 | 1 | 1/1 | 213.4 | 213.4 | 0.4 | 2.9 | 3672 | 20.4 | 4 | 0.1932 | 0.1988 | 0.06 | 0 |
+| reverse_penalty=1.5 direction_change_cost=5 | S3 | 1 | 1/1 | 21.5 | 21.5 | 0.7 | 3.5 | 40 | 29.7 | 1 | 0.1932 | 0.1971 | 0.11 | 0 |
+| reverse_penalty=1.5 direction_change_cost=5 | S4 | 1 | 1/1 | 250.9 | 250.9 | 5.6 | 11.7 | 6810 | 92.3 | 2 | 0.1932 | 0.2002 | 0.07 | 0 |
+| reverse_penalty=1.5 direction_change_cost=5 | S5 | 50 | 50/50 | 28.4 | 66.4 | 2.9 | 4.4 | 116 | 33.0 | 1 | 0.1932 | 0.2028 | 0.05 | 2 |
+| reverse_penalty=10 direction_change_cost=150 | S1 | 1 | 1/1 | 1912.8 | 1912.8 | 6.3 | 11.0 | 49138 | 104.1 | 3 | 0.1932 | 0.1977 | 0.08 | 0 |
+| reverse_penalty=10 direction_change_cost=150 | S2 | 1 | 0/1 | 2823.8 | 2823.8 | - | - | - | - | - | - | - | - | - |
+| reverse_penalty=10 direction_change_cost=150 | S3 | 1 | 1/1 | 31.3 | 31.3 | 0.4 | 2.4 | 340 | 29.4 | 1 | 0.1932 | 0.1971 | 0.69 | 0 |
+| reverse_penalty=10 direction_change_cost=150 | S4 | 1 | 1/1 | 886.8 | 886.8 | 5.9 | 11.0 | 26040 | 92.3 | 2 | 0.1932 | 0.2002 | 0.07 | 0 |
+| reverse_penalty=10 direction_change_cost=150 | S5 | 50 | 50/50 | 28.8 | 235.3 | 3.0 | 4.3 | 184 | 35.6 | 1 | 0.1932 | 0.2028 | 0.05 | 2 |
+| reverse_penalty=10 direction_change_cost=5 | S1 | 1 | 1/1 | 310.0 | 310.0 | 6.6 | 11.3 | 5698 | 104.1 | 3 | 0.1932 | 0.1977 | 0.08 | 0 |
+| reverse_penalty=10 direction_change_cost=5 | S2 | 1 | 0/1 | 2784.8 | 2784.8 | - | - | - | - | - | - | - | - | - |
+| reverse_penalty=10 direction_change_cost=5 | S3 | 1 | 1/1 | 38.6 | 38.6 | 2.4 | 2.6 | 670 | 32.5 | 3 | 0.1932 | 0.1977 | 0.89 | 0 |
+| reverse_penalty=10 direction_change_cost=5 | S4 | 1 | 1/1 | 216.9 | 216.9 | 5.8 | 10.8 | 6160 | 92.3 | 2 | 0.1932 | 0.2002 | 0.07 | 0 |
+| reverse_penalty=10 direction_change_cost=5 | S5 | 50 | 50/50 | 28.2 | 171.4 | 2.9 | 4.3 | 158 | 35.7 | 1 | 0.1932 | 0.2028 | 0.05 | 1 |

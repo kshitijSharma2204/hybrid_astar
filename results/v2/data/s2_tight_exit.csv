@@ -1,0 +1,2 @@
+scenario,label,run,success,expansions,search_ms,smooth_ms,length,reverse_length,switches,max_curvature_raw,max_curvature,min_clearance,goal_pos_error,goal_heading_error,cost,setup_ms,smooth_fallbacks,shortcut_ms,shortcuts
+S2_tight_exit,exit,0,1,377,28.029,0.000,15.391,2.200,11,0.19322,0.19322,0.061,8.88e-16,0,27.491,0.742,0,0.000,0
