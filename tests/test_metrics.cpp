@@ -37,7 +37,9 @@ TEST(Metrics, LengthSwitchesClearance) {
   EXPECT_DOUBLE_EQ(m.reverse_length, 0.5);
   EXPECT_EQ(m.direction_switches, 1);
   // front bumper reaches 11 + 2.25 = 13.25, obstacle centre at 15.05
-  EXPECT_NEAR(m.min_clearance, std::hypot(15.05 - 13.25, 0.05), 1e-9);
+  // the cell centre is level with the car (0.05 m off its axis), so the gap
+  // is straight ahead
+  EXPECT_NEAR(m.min_clearance, 15.05 - 13.25, 1e-9);
   EXPECT_NEAR(m.goal_pos_error, 0.0, 1e-12);
   EXPECT_DOUBLE_EQ(m.cost, 1.0 + cfg.reverse_penalty * 0.5 + cfg.direction_change_cost);
 }
