@@ -81,6 +81,8 @@ def run_v1(cli, scenario, goal, timeout, tmpdir):
            "note": ""}
     if row["success"]:
         rows = [r for r in csv.reader(open(out_csv)) if r and r[0][0] not in "#x"]
+        pts = [(float(r[0]), float(r[1])) for r in rows]
+        row["length"] = sum(math.hypot(b[0] - a[0], b[1] - a[1]) for a, b in zip(pts, pts[1:]))
         x, y, th = (float(v) for v in rows[-1])
         row["goal_pos_error"] = math.hypot(x - goal[0], y - goal[1])
         d = th - math.radians(goal[2])
@@ -97,8 +99,10 @@ def run_v2(cli, scenario, tmpdir):
                    capture_output=True, text=True)
     r = next(csv.DictReader(open(stats)))
     row = {"success": int(r["success"]), "expansions": int(r["expansions"]),
-           "ms": float(r["setup_ms"]) + float(r["search_ms"]) + float(r["smooth_ms"]), "note": ""}
+           "ms": float(r["setup_ms"]) + float(r["search_ms"]) + float(r["shortcut_ms"])
+                 + float(r["smooth_ms"]), "note": ""}
     if row["success"]:
+        row["length"] = float(r["length"])
         row["goal_pos_error"] = float(r["goal_pos_error"])
         row["goal_heading_error"] = float(r["goal_heading_error"])
     return row
@@ -125,7 +129,7 @@ def main():
                 print("%-8s %s success=%d ms=%.1f %s" % (name, version, row["success"],
                                                          row["ms"], row["note"]), flush=True)
 
-    keys = ["scenario", "version", "success", "expansions", "ms", "goal_pos_error",
+    keys = ["scenario", "version", "success", "expansions", "ms", "length", "goal_pos_error",
             "goal_heading_error", "note"]
     with open(args.out, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=keys)
@@ -133,16 +137,22 @@ def main():
         for r in rows:
             w.writerow({k: r.get(k, "") for k in keys})
 
-    print("\n| scenario | version | success | time ms median | goal position error median "
-          "| goal heading error median |\n|---|---|---|---|---|---|")
+    # S5 lengths only over the seeds both versions solve, so they compare
+    both = {r["scenario"] for r in rows if r["version"] == "v1" and r["success"]} & \
+           {r["scenario"] for r in rows if r["version"] == "v2" and r["success"]}
+    print("\n| scenario | version | success | time ms median | length m median "
+          "| goal position error median | goal heading error median |\n"
+          "|---|---|---|---|---|---|---|")
     for group in ("S1", "S2", "S3", "S4", "S5"):
         for version in ("v1", "v2"):
             rs = [r for r in rows if r["version"] == version and
                   (r["scenario"] == group or (group == "S5" and r["scenario"].startswith("seed")))]
             ok = [r for r in rs if r["success"]]
             med = lambda k: "%.3g" % statistics.median(r[k] for r in ok) if ok else "-"
-            print("| %s | %s | %d/%d | %.1f | %s | %s |" % (
+            lens = [r["length"] for r in ok if r["scenario"] in both]
+            print("| %s | %s | %d/%d | %.1f | %s | %s | %s |" % (
                 group, version, len(ok), len(rs), statistics.median(r["ms"] for r in rs),
+                "%.1f" % statistics.median(lens) if lens else "-",
                 med("goal_pos_error"), med("goal_heading_error")))
 
 

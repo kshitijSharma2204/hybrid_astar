@@ -124,6 +124,10 @@ int main(int argc, char** argv) {
     else { std::cerr << "unknown option " << a << "\n" << kUsage; return 2; }
   }
   if (scenario_file.empty()) { std::cerr << kUsage; return 2; }
+  if (label.find_first_of(",\n\"") != std::string::npos) {
+    std::cerr << "--label cannot contain a comma, quote or newline (it goes into a CSV)\n";
+    return 2;
+  }
 
   try {
     Scenario sc = loadScenario(scenario_file);
