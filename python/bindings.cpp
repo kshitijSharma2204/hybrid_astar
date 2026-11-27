@@ -148,6 +148,8 @@ PYBIND11_MODULE(hybrid_astar, m) {
     .def_readonly("expansions", &PlanStats::expansions)
     .def_readonly("search_ms", &PlanStats::search_ms)
     .def_readonly("smooth_ms", &PlanStats::smooth_ms)
+    .def_readonly("shortcut_ms", &PlanStats::shortcut_ms)
+    .def_readonly("shortcuts", &PlanStats::shortcuts)
     .def_readonly("smooth_segments", &PlanStats::smooth_segments)
     .def_readonly("smooth_fallbacks", &PlanStats::smooth_fallbacks);
 
@@ -187,7 +189,7 @@ PYBIND11_MODULE(hybrid_astar, m) {
     })
     .def_property_readonly("raw_x", [](const PlanResult& r) {
       return column<double>(r.raw_poses.size(), [&](size_t i) { return r.raw_poses[i].x; });
-    }, "path before smoothing")
+    }, "search path, before shortcutting and smoothing")
     .def_property_readonly("raw_y", [](const PlanResult& r) {
       return column<double>(r.raw_poses.size(), [&](size_t i) { return r.raw_poses[i].y; });
     })

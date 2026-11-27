@@ -102,7 +102,7 @@ def plot_result(grid, result, config, start=None, goal=None, ax=None, out=None,
     handles = [plt.Line2D([], [], color=FORWARD, lw=2, label="forward"),
                plt.Line2D([], [], color=REVERSE, lw=2, label="reverse")]
     if getattr(result, "raw_x", None) is not None:
-        handles.append(plt.Line2D([], [], color=RAW, lw=0.8, label="before smoothing"))
+        handles.append(plt.Line2D([], [], color=RAW, lw=0.8, label="search path"))
     ax.legend(handles=handles, loc="upper right", fontsize=8, framealpha=0.9)
     if title:
         ax.set_title(title)

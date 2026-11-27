@@ -37,6 +37,8 @@ const std::vector<Field>& fields() {
     {"analytic_expansion_interval", nullptr, &PlannerConfig::analytic_expansion_interval, 0},
     {"analytic_expansion_distance", &PlannerConfig::analytic_expansion_distance, nullptr, 0},
     {"rs_sample_step",        &PlannerConfig::rs_sample_step,        nullptr, 1e-3},
+    {"shortcut_enabled",      nullptr, &PlannerConfig::shortcut_enabled,      0},
+    {"shortcut_spacing",      &PlannerConfig::shortcut_spacing,      nullptr, 1e-3},
     {"smooth_enabled",        nullptr, &PlannerConfig::smooth_enabled,        0},
     {"smooth_iterations",     nullptr, &PlannerConfig::smooth_iterations,     0},
     {"smooth_spacing",        &PlannerConfig::smooth_spacing,        nullptr, 1e-3},

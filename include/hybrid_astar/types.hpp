@@ -41,7 +41,7 @@ struct PlannerConfig {
   double step_size      = 0.5;    // m per motion primitive
   double collision_step = 0.2;    // m between collision checks on a primitive
   int    steer_samples  = 5;      // steering angles from -max_steer to +max_steer
-  double xy_resolution  = 0.2;    // m, cell size of the closed set
+  double xy_resolution  = 0.5;    // m, cell size of the closed set
   int    heading_bins   = 72;
   int    max_expansions = 200000;
   int    collision_mode = 2;      // 0 exact, 1 circles, 2 circles then exact
@@ -53,6 +53,10 @@ struct PlannerConfig {
   int    analytic_expansion_interval = 10;    // every N expansions, 0 = off
   double analytic_expansion_distance = 10.0;  // m, try on every expansion when closer
   double rs_sample_step = 0.1;                // m between collision checks on the curve
+
+  // shortcutting, see shortcut.hpp
+  int    shortcut_enabled = 1;
+  double shortcut_spacing = 0.5;        // m between the poses that can be joined
 
   // smoothing, see smoother.hpp
   int    smooth_enabled       = 1;
@@ -69,9 +73,9 @@ struct PlannerConfig {
   // cost weights
   double reverse_penalty       = 1.5;   // multiplier on reverse distance
   double direction_change_cost = 5.0;
-  double steer_cost            = 1.0;    // per rad of steering
-  double steer_change_cost     = 5.0;    // per rad of steering change
-  double heuristic_weight      = 5.0;
+  double steer_cost            = 0.0;    // per rad of steering, per primitive
+  double steer_change_cost     = 0.0;    // per rad of steering change, per primitive
+  double heuristic_weight      = 2.0;
   int    rs_heuristic          = 1;      // 1: h = max(2D distance, Reeds-Shepp length)
 
   double minTurningRadius() const { return wheel_base / std::tan(max_steer); }
@@ -82,6 +86,8 @@ struct PlanStats {
   int    expansions = 0;
   double search_ms  = 0.0;
   double smooth_ms  = 0.0;
+  double shortcut_ms = 0.0;
+  int    shortcuts   = 0;      // Reeds-Shepp curves put in by the shortcut pass
   int    smooth_segments = 0;
   int    smooth_fallbacks = 0;   // segments left unsmoothed (collision or curvature)
 };
@@ -112,7 +118,7 @@ struct PlanOptions {
 struct PlanResult {
   std::vector<Pose2D> poses;    // final path, smoothed if smoothing is on
   std::vector<int> direction;   // per pose: +1 forward, -1 reverse
-  std::vector<Pose2D> raw_poses;  // the search path before smoothing
+  std::vector<Pose2D> raw_poses;  // the search path, before shortcutting and smoothing
   std::vector<int> raw_direction;
   PlanStats stats;
   std::string message;

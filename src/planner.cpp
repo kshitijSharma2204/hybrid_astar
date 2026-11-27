@@ -1,6 +1,7 @@
 #include "hybrid_astar/planner.hpp"
 
 #include "hybrid_astar/geometry.hpp"
+#include "hybrid_astar/shortcut.hpp"
 #include "hybrid_astar/smoother.hpp"
 
 #include <algorithm>
@@ -167,6 +168,16 @@ PlanResult HybridAStarPlanner::plan(
       result.stats.search_ms = elapsedMs();
       result.raw_poses = result.poses;
       result.raw_direction = result.direction;
+      if (config_.shortcut_enabled) {
+        auto t_cut = std::chrono::steady_clock::now();
+        ShortcutResult sc = shortcutPath(result.poses, result.direction, rs_, *checker_, config_);
+        result.poses = std::move(sc.poses);
+        result.direction = std::move(sc.direction);
+        result.stats.shortcuts = sc.shortcuts;
+        result.stats.shortcut_ms = std::chrono::duration<double, std::milli>(
+          std::chrono::steady_clock::now() - t_cut).count();
+        log("shortcut: " + std::to_string(sc.shortcuts) + " Reeds-Shepp curves put in");
+      }
       if (config_.smooth_enabled) {
         auto t_smooth = std::chrono::steady_clock::now();
         SmoothResult sm = smoothPath(result.poses, result.direction, *checker_, config_);

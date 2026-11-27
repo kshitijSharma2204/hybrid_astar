@@ -13,7 +13,7 @@ rear_axle_to_center: 1.25  # m, poses are the rear axle; footprint centre is thi
 step_size: 0.5           # m per motion primitive
 collision_step: 0.2      # m between collision checks along a primitive
 steer_samples: 5         # steering angles from -max_steer to +max_steer
-xy_resolution: 0.2       # m, cell size of the closed set
+xy_resolution: 0.5       # m, cell size of the closed set
 heading_bins: 72         # 5 degrees each
 max_expansions: 200000   # give up after this many
 collision_mode: 2        # 0 exact, 1 covering circles, 2 circles then exact
@@ -25,6 +25,10 @@ goal_heading_tol: 0.3    # rad, same
 analytic_expansion_interval: 10    # try every N expansions, 0 = off
 analytic_expansion_distance: 10.0  # m, try on every expansion when this close
 rs_sample_step: 0.1                # m between collision checks on the curve
+
+# shortcutting (Reeds-Shepp curves across each run between cusps, see shortcut.hpp)
+shortcut_enabled: 1
+shortcut_spacing: 0.5        # m between the poses that can be joined
 
 # smoothing (gradient descent on each run between cusps, see smoother.hpp)
 smooth_enabled: 1
@@ -41,7 +45,7 @@ smooth_curvature_limit: 1.05 # a smoothed run is kept only if it turns no tighte
 # costs
 reverse_penalty: 1.5           # multiplier on distance driven in reverse
 direction_change_cost: 5.0     # added at every forward/reverse switch
-steer_cost: 1.0                # per rad of steering
-steer_change_cost: 5.0         # per rad of change in steering
-heuristic_weight: 5.0          # 1 = plain A*, larger = greedier
+steer_cost: 0.0                # per rad of steering, per primitive
+steer_change_cost: 0.0         # per rad of change in steering, per primitive
+heuristic_weight: 2.0          # 1 = plain A*, larger = greedier
 rs_heuristic: 1                # 1: h = max(2D distance, Reeds-Shepp length), 0: 2D only
