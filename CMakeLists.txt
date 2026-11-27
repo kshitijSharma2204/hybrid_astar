@@ -22,6 +22,7 @@ find_package(ompl REQUIRED)
 add_library(hybrid_astar_core STATIC
   src/collision.cpp
   src/config.cpp
+  src/metrics.cpp
   src/planner.cpp
   src/reeds_shepp.cpp
   src/scenario.cpp
@@ -43,6 +44,7 @@ if(BUILD_TESTING)
     tests/test_collision.cpp
     tests/test_config.cpp
     tests/test_geometry.cpp
+    tests/test_metrics.cpp
     tests/test_planner.cpp
     tests/test_reeds_shepp.cpp
   )
