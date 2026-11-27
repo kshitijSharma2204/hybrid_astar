@@ -64,6 +64,13 @@ void setConfigValue(PlannerConfig& cfg, const std::string& key, double value) {
   throw std::runtime_error("unknown config key '" + key + "'");
 }
 
+double getConfigValue(const PlannerConfig& cfg, const std::string& key) {
+  for (const auto& f : fields()) {
+    if (key == f.name) return f.i ? double(cfg.*f.i) : cfg.*f.d;
+  }
+  throw std::runtime_error("unknown config key '" + key + "'");
+}
+
 std::vector<std::string> configKeys() {
   std::vector<std::string> keys;
   for (const auto& f : fields()) keys.push_back(f.name);

@@ -15,6 +15,7 @@ PlannerConfig parseConfig(const std::string& text, const std::string& source = "
 
 // Sets one field by name, with the same checks as the file parser.
 void setConfigValue(PlannerConfig& cfg, const std::string& key, double value);
+double getConfigValue(const PlannerConfig& cfg, const std::string& key);
 std::vector<std::string> configKeys();
 
 } // namespace hybrid_astar
