@@ -1,5 +1,7 @@
 #include "hybrid_astar/collision.hpp"
 
+#include "hybrid_astar/geometry.hpp"
+
 #include <cmath>
 #include <utility>
 
@@ -13,11 +15,10 @@ CollisionChecker::CollisionChecker(const GridMap& grid, const PlannerConfig& cfg
 }
 
 bool CollisionChecker::isPointInObstacle(double x, double y) const {
-  double res = grid_.resolution;
-  int ix = int(std::floor((x - grid_.origin_x)/res));
-  int iy = int(std::floor((y - grid_.origin_y)/res));
-  if(ix<0||iy<0||ix>=grid_.width||iy>=grid_.height) return true;
-  return grid_.data[iy*grid_.width + ix] >= 100;
+  int ix = worldToCellX(grid_, x);
+  int iy = worldToCellY(grid_, y);
+  if (!inBounds(grid_, ix, iy)) return true;
+  return isOccupied(grid_, ix, iy);
 }
 
 bool CollisionChecker::inCollision(const Pose2D& s) const {

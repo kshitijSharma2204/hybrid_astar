@@ -94,13 +94,10 @@ PlanResult HybridAStarPlanner::plan(
     return (uint64_t(ix)<<40) | (uint64_t(iy)<<20) | uint64_t(iyaw);
   };
   auto discretize = [&](const State &s){
-    double res = map_.resolution;
-    double ox  = map_.origin_x;
-    double oy  = map_.origin_y;
     int W      = map_.width;
 
-    int ix = int(std::round((s.x - ox)/res));
-    int iy = int(std::round((s.y - oy)/res));
+    int ix = worldToCellX(map_, s.x);
+    int iy = worldToCellY(map_, s.y);
     double th = s.theta;   // already in (-pi, pi]
     if (th < 0) th += 2*M_PI;
     int iyaw = int(std::floor(th/yaw_resolution_)) % config_.heading_bins;
@@ -227,10 +224,8 @@ void HybridAStarPlanner::buildHeuristic(const State &goal) {
   heuristic_.assign(W*H, std::numeric_limits<double>::infinity());
 
   auto idx=[&](int x,int y){ return y*W + x; };
-  int gx = std::clamp(int((goal.x-map_.origin_x)/res),
-                      0, W-1);
-  int gy = std::clamp(int((goal.y-map_.origin_y)/res),
-                      0, H-1);
+  int gx = std::clamp(worldToCellX(map_, goal.x), 0, W-1);
+  int gy = std::clamp(worldToCellY(map_, goal.y), 0, H-1);
 
   using P = std::pair<double,int>;
   std::priority_queue<P,std::vector<P>,std::greater<P>> pq;
@@ -259,11 +254,8 @@ void HybridAStarPlanner::buildHeuristic(const State &goal) {
 }
 
 double HybridAStarPlanner::computeHeuristic(const State &s) const {
-  double res = map_.resolution;
-  int gx = std::clamp(int((s.x-map_.origin_x)/res),
-                      0, map_.width-1);
-  int gy = std::clamp(int((s.y-map_.origin_y)/res),
-                      0, map_.height-1);
+  int gx = std::clamp(worldToCellX(map_, s.x), 0, map_.width-1);
+  int gy = std::clamp(worldToCellY(map_, s.y), 0, map_.height-1);
   return config_.heuristic_weight * heuristic_[gy * map_.width + gx];
 }
 
@@ -272,15 +264,14 @@ bool HybridAStarPlanner::isInCollision(const State &s) const {
 }
 
 void HybridAStarPlanner::buildObstacleKDTree() {
-  double res = map_.resolution;
   obstacle_cloud_.points.clear();  
   for(int y=0;y<map_.height;++y){
     for(int x=0;x<map_.width;++x){
       int idx = y*map_.width + x;
       if(map_.data[idx]>=100){
         obstacle_cloud_.points.push_back({
-          map_.origin_x + x*res,
-          map_.origin_y + y*res
+          cellCenterX(map_, x),
+          cellCenterY(map_, y)
         });
       }
     }
